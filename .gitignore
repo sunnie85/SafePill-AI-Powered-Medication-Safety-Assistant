@@ -1,0 +1,6 @@
+.vscode/
+__pycache__/
+*.pyc
+openvino-env/
+.DS_Store
+*.mp4
