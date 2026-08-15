@@ -2200,7 +2200,7 @@ else:
     due_family_reminders = fetch_due_family_reminders(st.session_state.user_phone)
     pending_family_invites = fetch_pending_invites_for_member(st.session_state.user_phone)
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/3022/3022574.png", width=60)
+        st.image("logo.png", width=60)
         st.title("SafePill")
         st.caption(f"{tr('sidebar_hello')}: **{st.session_state.current_profile.get('full_name', '')}**")
         st.caption(f"{tr('sidebar_phone')}: `{st.session_state.user_phone}`")
