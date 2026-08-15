@@ -36,7 +36,24 @@ import os
 import cv2
 import numpy as np
 from PIL import Image
-from openvino.runtime import Core
+
+# ---- Import OpenVINO an toàn (KHÔNG được để lỗi import làm sập toàn bộ app) ----
+# Một số môi trường deploy (VD: Streamlit Cloud dùng Python quá mới mà OpenVINO
+# chưa có wheel hỗ trợ) có thể khiến gói 'openvino' cài "thành công" nhưng bên
+# trong rỗng, gây ModuleNotFoundError khi import. Nếu điều đó xảy ra, module này
+# vẫn phải import được bình thường; run_openvino_ocr() sẽ raise lỗi rõ ràng khi
+# thực sự được gọi, để safepill.py tự xử lý (rơi về báo lỗi gốc của Gemini) thay
+# vì làm sập cả ứng dụng ngay từ dòng import.
+try:
+    from openvino.runtime import Core
+    OPENVINO_AVAILABLE = True
+except ImportError:
+    try:
+        from openvino import Core  # API mới hơn ở một số bản OpenVINO gần đây
+        OPENVINO_AVAILABLE = True
+    except ImportError:
+        Core = None
+        OPENVINO_AVAILABLE = False
 
 ALPHABET = "#0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -52,6 +69,13 @@ _rec_model = None
 
 def _load_models():
     global _det_model, _rec_model
+    if not OPENVINO_AVAILABLE:
+        raise RuntimeError(
+            "OpenVINO không khả dụng trong môi trường hiện tại (thiếu module "
+            "openvino.runtime). Kiểm tra: 1) file runtime.txt đã ghim đúng phiên "
+            "bản Python mà OpenVINO hỗ trợ (VD: 3.11) chưa; 2) đã reboot/deploy "
+            "lại app sau khi thêm runtime.txt chưa."
+        )
     if _det_model is None or _rec_model is None:
         core = Core()
         _det_model = core.compile_model(core.read_model(DET_MODEL_PATH), "CPU")
