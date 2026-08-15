@@ -1,5 +1,4 @@
 from urllib import response
-
 import streamlit as st
 import streamlit.components.v1 as components
 import time
@@ -50,7 +49,20 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+# ---- Logo ứng dụng ----
+LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
 
+
+def render_app_logo(width: int = 60) -> None:
+    """Hiển thị logo SafePill; nếu thiếu file thì âm thầm dùng icon dự phòng,
+    không để lỗi thiếu ảnh làm sập toàn bộ ứng dụng."""
+    if os.path.exists(LOGO_PATH):
+        try:
+            st.image(LOGO_PATH, width=width)
+            return
+        except Exception:
+            pass
+    st.image("https://cdn-icons-png.flaticon.com/512/3022/3022574.png", width=width)
 # ---- Mới: áp dụng theme giao diện SafePill (teal-slate) ----
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from theme_snippet import apply_safepill_theme
@@ -2200,7 +2212,7 @@ else:
     due_family_reminders = fetch_due_family_reminders(st.session_state.user_phone)
     pending_family_invites = fetch_pending_invites_for_member(st.session_state.user_phone)
     with st.sidebar:
-        st.image("logo.png", width=60)
+        render_app_logo(width=60)
         st.title("SafePill")
         st.caption(f"{tr('sidebar_hello')}: **{st.session_state.current_profile.get('full_name', '')}**")
         st.caption(f"{tr('sidebar_phone')}: `{st.session_state.user_phone}`")
