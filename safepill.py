@@ -395,7 +395,11 @@ TRANSLATIONS = {
         "settings_sub_schedule": "⏰ Lịch uống thuốc",
         "settings_sub_notification": "🔔 Thông báo & Âm thanh",
         "settings_sub_family": "👪 Người thân",
-
+        "notif_enable_btn": "🔔 Bật thông báo & âm thanh (bấm 1 lần)",
+        "notif_permission_granted": "✅ Đã bật thông báo thành công!",
+        "notif_permission_denied": "❌ Trình duyệt đã từ chối quyền thông báo. Vào Cài đặt trình duyệt/điện thoại → bật lại quyền Thông báo cho trang này.",
+        "notif_not_supported": "⚠️ Trình duyệt này không hỗ trợ thông báo đẩy.",
+        "notif_ios_warning": "⚠️ iPhone/iPad (Safari) không hỗ trợ thông báo đẩy trên trình duyệt thường. Hãy thêm SafePill vào Màn hình chính, và luôn để ý banner cảnh báo màu đỏ/vàng ngay trong ứng dụng — đây là kênh cảnh báo đáng tin cậy nhất trên iPhone.",
         "acc_personal_info": "Thông tin cá nhân",
         "acc_full_name": "Họ và tên",
         "acc_blood_type": "🩸 Nhóm máu",
@@ -833,7 +837,11 @@ TRANSLATIONS = {
         "settings_sub_schedule": "⏰ Medication schedule",
         "settings_sub_notification": "🔔 Notifications & sound",
         "settings_sub_family": "👪 Family",
-
+        "notif_enable_btn": "🔔 Enable notifications & sound (tap once)",
+        "notif_permission_granted": "✅ Notifications enabled successfully!",
+        "notif_permission_denied": "❌ Notification permission was denied. Go to your browser/phone settings and re-enable notifications for this site.",
+        "notif_not_supported": "⚠️ This browser does not support push notifications.",
+        "notif_ios_warning": "⚠️ iPhone/iPad (Safari) does not support push notifications in the regular browser. Add SafePill to your Home Screen, and always watch for the red/yellow warning banners inside the app — this is the most reliable alert channel on iPhone.",
         "acc_personal_info": "Personal information",
         "acc_full_name": "Full name",
         "acc_blood_type": "🩸 Blood type",
@@ -2273,6 +2281,43 @@ else:
     with tab_home:
         st.header(tr("home_header"))
 
+        # ---- MỚI: nút kích hoạt thông báo + âm thanh, PHẢI gắn trực tiếp vào 1 lần bấm
+        # của người dùng để hoạt động trên mobile. KHÔNG tự động gọi requestPermission(),
+        # vì trình duyệt mobile sẽ âm thầm từ chối nếu không có user gesture trực tiếp. ----
+        _sound_js_fn_top = build_reminder_sound_script(
+            st.session_state.reminder_sound, st.session_state.reminder_volume
+        )
+        _enable_notif_html = f"""
+        <button id="enableNotifBtn" style="padding:10px 18px;border-radius:10px;border:none;
+        background:#006a62;color:white;cursor:pointer;font-size:15px;width:100%;
+        font-weight:600;">{tr('notif_enable_btn')}</button>
+        <p id="notifStatusMsg" style="font-size:13px;color:#666;margin-top:6px;"></p>
+        <script>
+        {_sound_js_fn_top}
+        document.getElementById('enableNotifBtn').addEventListener('click', function() {{
+            try {{ playReminderSound("{st.session_state.reminder_sound}", {st.session_state.reminder_volume}); }} catch(e) {{}}
+            var statusEl = document.getElementById('notifStatusMsg');
+            if (window.Notification) {{
+                Notification.requestPermission().then(function(perm) {{
+                    if (perm === "granted") {{
+                        statusEl.innerText = "{tr('notif_permission_granted')}";
+                        try {{
+                            new Notification("{tr('home_notification_title')}", {{ body: "{tr('notif_permission_granted')}" }});
+                        }} catch(e) {{}}
+                    }} else {{
+                        statusEl.innerText = "{tr('notif_permission_denied')}";
+                    }}
+                }});
+            }} else {{
+                statusEl.innerText = "{tr('notif_not_supported')}";
+            }}
+        }});
+        </script>
+        """
+        components.html(_enable_notif_html, height=90)
+        st.caption(tr("notif_ios_warning"))
+        st.divider()
+
         auto_escalated_now = check_and_auto_escalate_overdue_doses(med_data_valid)
         if auto_escalated_now:
             for item in auto_escalated_now:
@@ -2422,7 +2467,6 @@ else:
             const meds = {reminder_json};
             const soundType = "{sound_type}";
             const soundVolume = {sound_volume};
-            if (window.Notification && Notification.permission !== "granted") {{
                 Notification.requestPermission();
             }}
             {sound_js_fn}
@@ -2441,8 +2485,10 @@ else:
             setInterval(checkReminders, 30000);
             </script>
             """, height=0)
-            if detected_conflicts:
-                st.error(tr("home_conflict_warning"))
+            st.divider()
+        if detected_conflicts:
+            st.error(tr("home_conflict_warning"))
+            st.toast(tr("home_conflict_warning"), icon="🚨")
 
     # ---------------- TAB QUÉT ĐƠN THUỐC (Vision AI) ----------------
     with tab_ocr:
