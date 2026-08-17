@@ -1248,41 +1248,84 @@ def resolve_reminder_time(thoi_diem: str) -> str:
 # nên phối hợp dược sĩ rà soát lại toàn bộ dữ liệu, đối chiếu trực tiếp với ấn bản mới nhất của
 # Dược thư Quốc gia Việt Nam và cơ sở dữ liệu Drugs.com/Lexicomp trước khi dùng cho mục đích lâm sàng.
 #
-# LƯU Ý VỀ ĐA NGÔN NGỮ: nội dung y khoa (mức độ, hệ quả) trong 2 cơ sở dữ liệu dưới đây vẫn giữ
-# nguyên tiếng Việt dù giao diện đang ở chế độ tiếng Anh — đây là giới hạn có chủ đích, vì dịch
-# thuật ngữ y khoa cần được dược sĩ rà soát trước khi hiển thị, tránh dịch tự động sai lệch gây
-# hiểu nhầm nguy hiểm. Hướng mở rộng: thêm các trường "effect_en"/"severity_en" sau khi có bản
-# dịch đã được chuyên gia kiểm duyệt.
+# LƯU Ý VỀ ĐA NGÔN NGỮ: mỗi cặp tương tác nay có thêm bản dịch tiếng Anh y khoa
+# (các trường "*_en") do đội ngũ tự soạn dựa trên đúng nội dung tiếng Việt gốc, không dùng dịch
+# máy tự động. Khi giao diện ở chế độ tiếng Anh, hàm loc_field() bên dưới sẽ ưu tiên lấy bản
+# "*_en"; nếu thiếu sẽ tự rơi về bản tiếng Việt để không bao giờ hiển thị trống. Khuyến nghị:
+# trước khi dùng cho mục đích lâm sàng thực tế, nên nhờ dược sĩ song ngữ rà soát lại các bản
+# dịch này.
 DEFAULT_SOURCE_NOTE = "Dược thư Quốc gia Việt Nam; Drugs.com Interaction Checker"
+DEFAULT_SOURCE_NOTE_EN = "Vietnamese National Pharmacopoeia (Dược thư Quốc gia Việt Nam); Drugs.com Interaction Checker"
+
+
+def loc_field(entry: dict, field: str) -> str:
+    """
+    Trả về giá trị đã bản địa hóa của một trường dữ liệu y khoa (severity/effect/item/nguon).
+    Ưu tiên bản "{field}_en" khi ngôn ngữ hiện tại là 'en' và bản dịch đã tồn tại; nếu không,
+    luôn rơi về bản tiếng Việt gốc để tránh hiển thị rỗng.
+    """
+    lang = st.session_state.get("language", "vi")
+    if lang == "en":
+        en_val = entry.get(f"{field}_en")
+        if en_val:
+            return en_val
+    return entry.get(field, "")
+
 
 INTERACTION_DATABASE = {
     "Aspirin": {"conflict": ["Ibuprofen", "Warfarin", "Naproxen", "Clopidogrel"],
                 "severity": "Cao", "effect": "Tăng nguy cơ xuất huyết tiêu hóa nghiêm trọng.",
-                "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Aspirin Interactions)"},
+                "severity_en": "High", "effect_en": "Increased risk of serious gastrointestinal bleeding.",
+                "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Aspirin Interactions)",
+                "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Aspirin Interactions)"},
     "Ibuprofen": {"conflict": ["Aspirin", "Corticoid", "Enalapril", "Losartan", "Furosemide"],
                   "severity": "Cao", "effect": "Giảm hiệu quả hạ huyết áp, tăng độc tính thận.",
-                  "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Ibuprofen Interactions)"},
+                  "severity_en": "High",
+                  "effect_en": "Reduced blood-pressure-lowering effect and increased kidney toxicity.",
+                  "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Ibuprofen Interactions)",
+                  "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Ibuprofen Interactions)"},
     "Paracetamol": {"conflict": ["Alcohol", "Leflunomide", "Warfarin"],
                     "severity": "Trung bình", "effect": "Tăng độc tính và nguy cơ hủy hoại tế bào gan.",
-                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Acetaminophen Interactions)"},
+                    "severity_en": "Moderate",
+                    "effect_en": "Increased toxicity and risk of liver cell damage.",
+                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Acetaminophen Interactions)",
+                    "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Acetaminophen Interactions)"},
     "Metformin": {"conflict": ["Contrast dye", "Cimetidine", "Alcohol"],
                   "severity": "Nghiêm trọng", "effect": "Tăng nguy cơ nhiễm toan lactic cấp tính.",
-                  "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Metformin Interactions)"},
+                  "severity_en": "Severe",
+                  "effect_en": "Increased risk of acute lactic acidosis.",
+                  "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Metformin Interactions)",
+                  "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Metformin Interactions)"},
     "Warfarin": {"conflict": ["Aspirin", "Paracetamol", "Ibuprofen", "Amiodarone"],
                  "severity": "Nghiêm trọng", "effect": "Tăng nguy cơ chảy máu do tăng tác dụng chống đông.",
-                 "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Warfarin Interactions)"},
+                 "severity_en": "Severe",
+                 "effect_en": "Increased bleeding risk due to enhanced anticoagulant effect.",
+                 "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Warfarin Interactions)",
+                 "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Warfarin Interactions)"},
     "Simvastatin": {"conflict": ["Amiodarone", "Clarithromycin", "Grapefruit juice"],
                     "severity": "Cao", "effect": "Tăng nguy cơ tiêu cơ vân (rhabdomyolysis).",
-                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Simvastatin Interactions)"},
+                    "severity_en": "High",
+                    "effect_en": "Increased risk of rhabdomyolysis (severe muscle breakdown).",
+                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Simvastatin Interactions)",
+                    "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Simvastatin Interactions)"},
     "Losartan": {"conflict": ["Ibuprofen", "Potassium", "Spironolactone"],
                  "severity": "Trung bình", "effect": "Tăng kali máu, giảm hiệu quả hạ áp.",
-                 "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Losartan Interactions)"},
+                 "severity_en": "Moderate",
+                 "effect_en": "Increased blood potassium and reduced blood-pressure-lowering effect.",
+                 "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Losartan Interactions)",
+                 "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Losartan Interactions)"},
     "Digoxin": {"conflict": ["Furosemide", "Amiodarone"],
                 "severity": "Nghiêm trọng", "effect": "Tăng nguy cơ ngộ độc digoxin, rối loạn nhịp tim.",
-                "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Digoxin Interactions)"},
+                "severity_en": "Severe",
+                "effect_en": "Increased risk of digoxin toxicity and cardiac arrhythmia.",
+                "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Digoxin Interactions)",
+                "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Digoxin Interactions)"},
     "Clopidogrel": {"conflict": ["Aspirin", "Omeprazole"],
                     "severity": "Trung bình", "effect": "Giảm hiệu quả chống kết tập tiểu cầu.",
-                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Clopidogrel Interactions)"},
+                    "severity_en": "Moderate",
+                    "effect_en": "Reduced antiplatelet effectiveness.",
+                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Clopidogrel Interactions)",
+                    "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Clopidogrel Interactions)"},
 }
 
 
@@ -1293,7 +1336,9 @@ def build_symmetric_lookup(db: dict) -> dict:
         for other in info["conflict"]:
             if other not in lookup:
                 lookup[other] = {"conflict": [], "severity": info["severity"], "effect": info["effect"],
-                                  "nguon": info.get("nguon", DEFAULT_SOURCE_NOTE)}
+                                  "severity_en": info.get("severity_en"), "effect_en": info.get("effect_en"),
+                                  "nguon": info.get("nguon", DEFAULT_SOURCE_NOTE),
+                                  "nguon_en": info.get("nguon_en", DEFAULT_SOURCE_NOTE_EN)}
             if drug not in lookup[other]["conflict"]:
                 lookup[other]["conflict"].append(drug)
     return lookup
@@ -1307,7 +1352,9 @@ def check_interaction(drug_a: str, drug_b: str):
     info = INTERACTION_LOOKUP.get(a)
     if info and b in info["conflict"]:
         return {"thuoc_1": a, "thuoc_2": b, "severity": info["severity"], "effect": info["effect"],
-                "nguon": info.get("nguon", DEFAULT_SOURCE_NOTE)}
+                "severity_en": info.get("severity_en"), "effect_en": info.get("effect_en"),
+                "nguon": info.get("nguon", DEFAULT_SOURCE_NOTE),
+                "nguon_en": info.get("nguon_en", DEFAULT_SOURCE_NOTE_EN)}
     return None
 
 
@@ -1329,43 +1376,73 @@ VN_FOOD_HERB_DATABASE = {
     "Paracetamol": [
         {"item": "Rượu bia", "severity": "Cao",
          "effect": "Tăng nguy cơ tổn thương gan cấp tính, đặc biệt khi dùng liều cao kéo dài.",
-         "nguon": "Drugs.com (Acetaminophen + Alcohol); Dược thư Quốc gia Việt Nam"},
+         "item_en": "Alcohol", "severity_en": "High",
+         "effect_en": "Increased risk of acute liver damage, especially with high or prolonged doses.",
+         "nguon": "Drugs.com (Acetaminophen + Alcohol); Dược thư Quốc gia Việt Nam",
+         "nguon_en": "Drugs.com (Acetaminophen + Alcohol); Vietnamese National Pharmacopoeia"},
     ],
     "Metformin": [
         {"item": "Rượu bia", "severity": "Nghiêm trọng",
          "effect": "Tăng nguy cơ nhiễm toan lactic, có thể đe dọa tính mạng.",
-         "nguon": "Drugs.com (Metformin + Alcohol); Dược thư Quốc gia Việt Nam"},
+         "item_en": "Alcohol", "severity_en": "Severe",
+         "effect_en": "Increased risk of lactic acidosis, which can be life-threatening.",
+         "nguon": "Drugs.com (Metformin + Alcohol); Dược thư Quốc gia Việt Nam",
+         "nguon_en": "Drugs.com (Metformin + Alcohol); Vietnamese National Pharmacopoeia"},
     ],
     "Warfarin": [
         {"item": "Rau càng cua / rau ngót / cải xoăn (nhiều vitamin K)", "severity": "Trung bình",
          "effect": "Giảm tác dụng chống đông máu, tăng nguy cơ hình thành cục máu đông.",
-         "nguon": "Drugs.com (Warfarin + Vitamin K foods); Dược thư Quốc gia Việt Nam"},
+         "item_en": "Vitamin K–rich leafy greens (e.g., watercress, katuk, kale)",
+         "severity_en": "Moderate",
+         "effect_en": "Reduced anticoagulant effect, increasing the risk of blood clots.",
+         "nguon": "Drugs.com (Warfarin + Vitamin K foods); Dược thư Quốc gia Việt Nam",
+         "nguon_en": "Drugs.com (Warfarin + Vitamin K foods); Vietnamese National Pharmacopoeia"},
         {"item": "Thuốc nam / thực phẩm chức năng (đương quy, nhân sâm, tỏi cô đặc...)", "severity": "Cao",
          "effect": "Có thể tăng hoặc giảm tác dụng chống đông không kiểm soát, tăng nguy cơ chảy máu.",
-         "nguon": "Drugs.com (Warfarin herbal interactions); khuyến cáo Bệnh viện Bạch Mai"},
+         "item_en": "Herbal remedies/supplements (e.g., dong quai, ginseng, concentrated garlic)",
+         "severity_en": "High",
+         "effect_en": "May unpredictably increase or decrease the anticoagulant effect, raising bleeding risk.",
+         "nguon": "Drugs.com (Warfarin herbal interactions); khuyến cáo Bệnh viện Bạch Mai",
+         "nguon_en": "Drugs.com (Warfarin herbal interactions); Bach Mai Hospital advisory"},
     ],
     "Simvastatin": [
         {"item": "Nước ép bưởi / bưởi", "severity": "Cao",
          "effect": "Tăng nồng độ thuốc trong máu, tăng nguy cơ tiêu cơ vân (rhabdomyolysis).",
-         "nguon": "Drugs.com (Simvastatin + Grapefruit); FDA Consumer Update"},
+         "item_en": "Grapefruit juice / grapefruit", "severity_en": "High",
+         "effect_en": "Increased blood drug levels, raising the risk of rhabdomyolysis.",
+         "nguon": "Drugs.com (Simvastatin + Grapefruit); FDA Consumer Update",
+         "nguon_en": "Drugs.com (Simvastatin + Grapefruit); FDA Consumer Update"},
     ],
     "Aspirin": [
         {"item": "Rượu bia", "severity": "Cao",
          "effect": "Tăng nguy cơ xuất huyết tiêu hóa.",
-         "nguon": "Drugs.com (Aspirin + Alcohol); Dược thư Quốc gia Việt Nam"},
+         "item_en": "Alcohol", "severity_en": "High",
+         "effect_en": "Increased risk of gastrointestinal bleeding.",
+         "nguon": "Drugs.com (Aspirin + Alcohol); Dược thư Quốc gia Việt Nam",
+         "nguon_en": "Drugs.com (Aspirin + Alcohol); Vietnamese National Pharmacopoeia"},
         {"item": "Gừng, tỏi cô đặc (thực phẩm chức năng liều cao)", "severity": "Trung bình",
          "effect": "Tăng tác dụng chống kết tập tiểu cầu, tăng nguy cơ chảy máu.",
-         "nguon": "Drugs.com (Aspirin herbal interactions)"},
+         "item_en": "Ginger, concentrated garlic (high-dose supplements)",
+         "severity_en": "Moderate",
+         "effect_en": "Increased antiplatelet effect, raising bleeding risk.",
+         "nguon": "Drugs.com (Aspirin herbal interactions)",
+         "nguon_en": "Drugs.com (Aspirin herbal interactions)"},
     ],
     "Digoxin": [
         {"item": "Cam thảo (thuốc nam)", "severity": "Cao",
          "effect": "Gây hạ kali máu, tăng nguy cơ ngộ độc digoxin.",
-         "nguon": "Drugs.com (Digoxin + Licorice); Dược thư Quốc gia Việt Nam"},
+         "item_en": "Licorice root (herbal remedy)", "severity_en": "High",
+         "effect_en": "Causes low blood potassium, increasing the risk of digoxin toxicity.",
+         "nguon": "Drugs.com (Digoxin + Licorice); Dược thư Quốc gia Việt Nam",
+         "nguon_en": "Drugs.com (Digoxin + Licorice); Vietnamese National Pharmacopoeia"},
     ],
     "Clopidogrel": [
         {"item": "Rượu bia", "severity": "Trung bình",
          "effect": "Tăng nguy cơ kích ứng và chảy máu đường tiêu hóa.",
-         "nguon": "Drugs.com (Clopidogrel + Alcohol)"},
+         "item_en": "Alcohol", "severity_en": "Moderate",
+         "effect_en": "Increased risk of gastrointestinal irritation and bleeding.",
+         "nguon": "Drugs.com (Clopidogrel + Alcohol)",
+         "nguon_en": "Drugs.com (Clopidogrel + Alcohol)"},
     ],
 }
 
@@ -2500,6 +2577,7 @@ else:
                         drug_name = med.get("Tên thuốc", "")
                         info = INTERACTION_LOOKUP.get(drug_name.strip().capitalize())
                         severity = info.get("severity") if info else "Chưa xác định"
+                        severity_display = loc_field(info, "severity") if info else severity
                         streak = record_missed_dose(drug_name, severity="Medium")
                         st.warning(tr("home_missed_recorded", drug=drug_name, n=streak))
                         if streak >= 2 and severity in ("Cao", "Nghiêm trọng"):
@@ -2510,7 +2588,7 @@ else:
                             )
                             if sent_to:
                                 st.error(tr("home_missed_escalated", n=len(sent_to),
-                                             severity=severity, streak=streak))
+                                             severity=severity_display, streak=streak))
                         st.rerun()
                     qty_left = med.get("Số lượng còn lại")
                     if qty_left is not None:
@@ -2765,17 +2843,17 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
             st.error(tr("cabinet_conflict_alert"))
             for c in detected_conflicts:
                 st.markdown(f"> **{c['thuoc_1']}** ↔ **{c['thuoc_2']}** \n"
-                            f"> {tr('cabinet_severity_label')}: **{c['severity']}** — {c['effect']}  \n"
-                            f"> _{tr('cabinet_source_label')}: {c.get('nguon', DEFAULT_SOURCE_NOTE)}_")
+                            f"> {tr('cabinet_severity_label')}: **{loc_field(c, 'severity')}** — {loc_field(c, 'effect')}  \n"
+                            f"> _{tr('cabinet_source_label')}: {loc_field(c, 'nguon') or DEFAULT_SOURCE_NOTE}_")
             st.warning(tr("cabinet_consult_warning"))
 
         food_herb_warnings = check_food_herb_conflicts(st.session_state.med_data)
         if food_herb_warnings:
             st.warning(tr("cabinet_food_warning_title"))
             for w in food_herb_warnings:
-                st.markdown(f"> **{w['thuoc']}** ↔ *{w['item']}* — {tr('cabinet_severity_label')}: **{w['severity']}**  \n"
-                            f"> {w['effect']}  \n"
-                            f"> _{tr('cabinet_source_label')}: {w.get('nguon', DEFAULT_SOURCE_NOTE)}_")
+                st.markdown(f"> **{w['thuoc']}** ↔ *{loc_field(w, 'item')}* — {tr('cabinet_severity_label')}: **{loc_field(w, 'severity')}**  \n"
+                            f"> {loc_field(w, 'effect')}  \n"
+                            f"> _{tr('cabinet_source_label')}: {loc_field(w, 'nguon') or DEFAULT_SOURCE_NOTE}_")
             st.caption(tr("cabinet_food_warning_caption"))
 
         if not med_data_valid:
@@ -2825,18 +2903,18 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
             food_results = check_food_herb_pair(t1, t2)
 
             if drug_result:
-                st.error(tr("matrix_drug_alert", severity=drug_result['severity']))
+                st.error(tr("matrix_drug_alert", severity=loc_field(drug_result, 'severity')))
                 st.markdown(f"- {tr('matrix_drug_pair')} `{drug_result['thuoc_1']}` và `{drug_result['thuoc_2']}`\n"
-                            f"- {tr('matrix_effect')} {drug_result['effect']}\n"
-                            f"- {tr('matrix_source')} {drug_result.get('nguon', DEFAULT_SOURCE_NOTE)}\n"
+                            f"- {tr('matrix_effect')} {loc_field(drug_result, 'effect')}\n"
+                            f"- {tr('matrix_source')} {loc_field(drug_result, 'nguon') or DEFAULT_SOURCE_NOTE}\n"
                             f"- {tr('matrix_recommendation')} {tr('matrix_recommendation_drug')}")
 
             if food_results:
                 for fr in food_results:
-                    st.warning(tr("matrix_food_alert", severity=fr['severity']))
-                    st.markdown(f"- **{fr['thuoc']}** ↔ *{fr['item']}*\n"
-                                f"- {tr('matrix_effect')} {fr['effect']}\n"
-                                f"- {tr('matrix_source')} {fr.get('nguon', DEFAULT_SOURCE_NOTE)}\n"
+                    st.warning(tr("matrix_food_alert", severity=loc_field(fr, 'severity')))
+                    st.markdown(f"- **{fr['thuoc']}** ↔ *{loc_field(fr, 'item')}*\n"
+                                f"- {tr('matrix_effect')} {loc_field(fr, 'effect')}\n"
+                                f"- {tr('matrix_source')} {loc_field(fr, 'nguon') or DEFAULT_SOURCE_NOTE}\n"
                                 f"- {tr('matrix_recommendation')} {tr('matrix_recommendation_food')}")
 
             if not drug_result and not food_results:
