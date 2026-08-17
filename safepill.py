@@ -326,6 +326,7 @@ TRANSLATIONS = {
                         "(đã kiểm tra cả thuốc–thuốc và thuốc–thực phẩm/thảo dược).",
         "matrix_footer_caption": "Lưu ý: cơ sở dữ liệu minh họa chỉ bao gồm một số hoạt chất và thực "
                                   "phẩm/thảo dược phổ biến, không thay thế tra cứu dược thư chính thức.",
+        
 
         # ---- Tab Hỏi đáp AI ----
         "expert_header": "🤖 Trợ lý hỏi đáp về thuốc & sức khỏe",
@@ -400,6 +401,11 @@ TRANSLATIONS = {
         "notif_permission_denied": "❌ Trình duyệt đã từ chối quyền thông báo. Vào Cài đặt trình duyệt/điện thoại → bật lại quyền Thông báo cho trang này.",
         "notif_not_supported": "⚠️ Trình duyệt này không hỗ trợ thông báo đẩy.",
         "notif_ios_warning": "⚠️ iPhone/iPad (Safari) không hỗ trợ thông báo đẩy trên trình duyệt thường. Hãy thêm SafePill vào Màn hình chính, và luôn để ý banner cảnh báo màu đỏ/vàng ngay trong ứng dụng — đây là kênh cảnh báo đáng tin cậy nhất trên iPhone.",
+        "notif_ios_add_home_title": "📱 iPhone/iPad: hãy thêm SafePill vào Màn hình chính để nhận cảnh báo tốt nhất",
+        "notif_ios_add_home_step1": "1️⃣ Bấm biểu tượng Chia sẻ (hình vuông có mũi tên) ở thanh dưới (Safari)",
+        "notif_ios_add_home_step2": "2️⃣ Chọn \"Thêm vào MH chính\" (Add to Home Screen)",
+        "notif_ios_add_home_step3": "3️⃣ Bấm \"Thêm\", rồi luôn mở SafePill từ icon trên Màn hình chính (không mở qua Safari)",
+        "notif_ios_add_home_note": "Lưu ý: kể cả sau khi thêm vào Màn hình chính, SafePill chỉ nhắc được khi app đang mở. Hãy chủ động mở app vào các giờ uống thuốc và theo dõi banner đỏ/vàng trong ứng dụng.",
         "acc_personal_info": "Thông tin cá nhân",
         "acc_full_name": "Họ và tên",
         "acc_blood_type": "🩸 Nhóm máu",
@@ -769,7 +775,7 @@ TRANSLATIONS = {
                         "drug–drug and drug–food/herbal interactions were checked).",
         "matrix_footer_caption": "Note: this illustrative database only covers some common active "
                                   "ingredients and foods/herbs, and does not replace an official pharmacopeia lookup.",
-
+        
         # ---- AI Q&A tab ----
         "expert_header": "🤖 Medication & health Q&A assistant",
         "expert_grounding_caption": "🔎 The assistant is instructed to prioritize reputable sources "
@@ -842,6 +848,11 @@ TRANSLATIONS = {
         "notif_permission_denied": "❌ Notification permission was denied. Go to your browser/phone settings and re-enable notifications for this site.",
         "notif_not_supported": "⚠️ This browser does not support push notifications.",
         "notif_ios_warning": "⚠️ iPhone/iPad (Safari) does not support push notifications in the regular browser. Add SafePill to your Home Screen, and always watch for the red/yellow warning banners inside the app — this is the most reliable alert channel on iPhone.",
+        "notif_ios_add_home_title": "📱 iPhone/iPad: add SafePill to your Home Screen for the most reliable alerts",
+        "notif_ios_add_home_step1": "1️⃣ Tap the Share icon (square with an arrow) in Safari's bottom bar",
+        "notif_ios_add_home_step2": "2️⃣ Choose \"Add to Home Screen\"",
+        "notif_ios_add_home_step3": "3️⃣ Tap \"Add\", then always open SafePill from its Home Screen icon (not through Safari)",
+        "notif_ios_add_home_note": "Note: even after adding to Home Screen, SafePill can only remind you while the app is open. Open the app around dosing times and watch for red/yellow banners inside the app.",
         "acc_personal_info": "Personal information",
         "acc_full_name": "Full name",
         "acc_blood_type": "🩸 Blood type",
@@ -1012,7 +1023,6 @@ def render_language_switcher() -> None:
         if choice != current:
             st.session_state.language = choice
             st.rerun()
-
 
 # =====================================================================================
 # 2. KẾT NỐI DỊCH VỤ (Supabase + Gemini) - có kiểm tra lỗi rõ ràng
@@ -2249,9 +2259,36 @@ else:
             st.session_state.onboarded = True
             st.rerun()
 
+    # ---- CSS cố định để thanh tab luôn hiện đủ icon + chữ, không bị cắt mất chữ ----
+    st.markdown(
+        """
+        <style>
+        [data-baseweb="tab-list"] {
+            overflow-x: auto !important;
+            flex-wrap: nowrap !important;
+        }
+        [data-baseweb="tab"] {
+            white-space: nowrap !important;
+            min-width: fit-content !important;
+            flex-shrink: 0 !important;
+        }
+        [data-baseweb="tab"] p {
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if st.session_state.elderly_mode:
+        # Lưu ý: KHÔNG áp font-size lớn lên nút tab (button trong [data-baseweb="tab"]),
+        # vì 8 tab không đủ chỗ hiển thị chữ ở cỡ 22px trên màn hình nhỏ -> chữ bị ẩn,
+        # chỉ còn icon. Nút "Taken/Missed" v.v. bên trong nội dung vẫn được phóng to bình thường.
         st.markdown(
-            "<style> p,span,label,button,h3,h2,input,li {font-size:22px !important;} "
+            "<style> p,span,label,h3,h2,input,li {font-size:22px !important;} "
+            "button:not([data-baseweb='tab']) {font-size:22px !important;} "
             "th,td {font-size:19px !important;} </style>",
             unsafe_allow_html=True,
         )
@@ -2315,7 +2352,43 @@ else:
         </script>
         """
         components.html(_enable_notif_html, height=90)
-        st.caption(tr("notif_ios_warning"))
+
+        # ---- Banner nổi bật "Add to Home Screen" cho iPhone/iPad, chỉ tự hiện khi thiết bị
+        # thực sự là iOS Safari và CHƯA chạy ở chế độ standalone (đã cài vào MH chính).
+        # Việc hiện/ẩn xử lý hoàn toàn ở phía client (JS), không cần round-trip Streamlit. ----
+        _ios_title_js = json.dumps(tr("notif_ios_add_home_title"), ensure_ascii=False)
+        _ios_step1_js = json.dumps(tr("notif_ios_add_home_step1"), ensure_ascii=False)
+        _ios_step2_js = json.dumps(tr("notif_ios_add_home_step2"), ensure_ascii=False)
+        _ios_step3_js = json.dumps(tr("notif_ios_add_home_step3"), ensure_ascii=False)
+        _ios_note_js = json.dumps(tr("notif_ios_add_home_note"), ensure_ascii=False)
+        components.html(f"""
+        <div id="iosAddHomeBanner" style="display:none;background:linear-gradient(135deg,#fff7ed,#ffedd5);
+        border:2px solid #f59e0b;border-radius:12px;padding:14px 16px;margin-top:4px;">
+            <p style="margin:0 0 8px 0;font-weight:700;color:#92400e;font-size:15px;"></p>
+            <p id="iosStep1" style="margin:2px 0;color:#78350f;font-size:14px;"></p>
+            <p id="iosStep2" style="margin:2px 0;color:#78350f;font-size:14px;"></p>
+            <p id="iosStep3" style="margin:2px 0 8px 0;color:#78350f;font-size:14px;"></p>
+            <p id="iosNote" style="margin:0;color:#92400e;font-size:12.5px;font-style:italic;"></p>
+        </div>
+        <script>
+        (function() {{
+            var ua = navigator.userAgent || navigator.vendor || window.opera;
+            var isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+            // Một số iPadOS mới báo UA giống macOS nhưng có touch -> kiểm tra thêm
+            var isIPadOS13Up = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+            var isStandalone = window.navigator.standalone === true ||
+                window.matchMedia('(display-mode: standalone)').matches;
+            if ((isIOS || isIPadOS13Up) && !isStandalone) {{
+                document.getElementById('iosAddHomeBanner').style.display = 'block';
+                document.querySelector('#iosAddHomeBanner p').innerText = {_ios_title_js};
+                document.getElementById('iosStep1').innerText = {_ios_step1_js};
+                document.getElementById('iosStep2').innerText = {_ios_step2_js};
+                document.getElementById('iosStep3').innerText = {_ios_step3_js};
+                document.getElementById('iosNote').innerText = {_ios_note_js};
+            }}
+        }})();
+        </script>
+        """, height=190)
         st.divider()
 
         auto_escalated_now = check_and_auto_escalate_overdue_doses(med_data_valid)
@@ -2467,8 +2540,6 @@ else:
             const meds = {reminder_json};
             const soundType = "{sound_type}";
             const soundVolume = {sound_volume};
-                Notification.requestPermission();
-            }}
             {sound_js_fn}
             function checkReminders() {{
                 const now = new Date();
@@ -2486,9 +2557,9 @@ else:
             </script>
             """, height=0)
             st.divider()
-        if detected_conflicts:
-            st.error(tr("home_conflict_warning"))
-            st.toast(tr("home_conflict_warning"), icon="🚨")
+            if detected_conflicts:
+                st.error(tr("home_conflict_warning"))
+                st.toast(tr("home_conflict_warning"), icon="🚨")
 
     # ---------------- TAB QUÉT ĐƠN THUỐC (Vision AI) ----------------
     with tab_ocr:
@@ -3114,7 +3185,7 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                             key=f"sched_shape_{idx}",
                         )
                         new_note = col5.text_area(
-                            tr("instructions_label"),
+                            tr("sched_note"),
                             value=med.get("Lời dặn", ""),
                             key=f"sched_note_{idx}"
                         )
