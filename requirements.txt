@@ -6,3 +6,4 @@ qrcode[pil]
 matplotlib
 openvino
 opencv-python-headless
+streamlit-autorefresh
