@@ -1681,10 +1681,6 @@ def build_adherence_task_key(drug_name: str, hhmm: str, med_obj) -> str:
 
 
 def check_and_auto_escalate_overdue_doses(med_data_valid: list) -> list:
-    """
-    Rà soát các thuốc trong lịch hôm nay: nếu đã quá AUTO_ESCALATION_MINUTES phút kể từ giờ hẹn
-    mà vẫn CHƯA được đánh dấu 'Đã uống', tự động gửi cảnh báo tới toàn bộ người thân đã 'accepted'.
-    """
     now = datetime.now()
     newly_escalated = []
     for med in med_data_valid:
@@ -1709,8 +1705,8 @@ def check_and_auto_escalate_overdue_doses(med_data_valid: list) -> list:
                 1,
             )
             st.session_state.auto_escalated_keys.add(key_name)
-            if sent_to:
-                newly_escalated.append({"drug": drug_name, "time": hhmm, "sent_to": len(sent_to)})
+            # LUÔN hiển thị banner cho chính người dùng, bất kể có người thân hay không
+            newly_escalated.append({"drug": drug_name, "time": hhmm, "sent_to": len(sent_to)})
     return newly_escalated
 
 
@@ -2471,8 +2467,12 @@ else:
         auto_escalated_now = check_and_auto_escalate_overdue_doses(med_data_valid)
         if auto_escalated_now:
             for item in auto_escalated_now:
-                st.error(tr("home_auto_escalate_msg", mins=AUTO_ESCALATION_MINUTES,
-                             time=item['time'], drug=item['drug'], n=item['sent_to']))
+                if item["sent_to"] > 0:
+                    st.error(tr("home_auto_escalate_msg", mins=AUTO_ESCALATION_MINUTES,
+                                 time=item['time'], drug=item['drug'], n=item['sent_to']))
+                else:
+                    st.error(f"🚨 Đã quá {AUTO_ESCALATION_MINUTES} phút kể từ giờ hẹn **{item['time']}** "
+                             f"mà **{item['drug']}** vẫn chưa được xác nhận uống!")
 
         with st.expander(tr("home_custom_expander"), expanded=False):
             st.caption(tr("home_custom_caption"))
