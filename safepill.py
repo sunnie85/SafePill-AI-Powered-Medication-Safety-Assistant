@@ -1348,6 +1348,12 @@ DEFAULT_MISSED_DOSE_SEVERITY = "Trung bình"  # mặc định an toàn: vẫn es
 
 def get_missed_dose_severity(drug_name: str) -> str:
     return MISSED_DOSE_SEVERITY.get(drug_name.strip().capitalize(), DEFAULT_MISSED_DOSE_SEVERITY)
+_SEVERITY_DISPLAY_EN = {"Cao": "High", "Nghiêm trọng": "Severe", "Trung bình": "Moderate"}
+def localize_severity(severity_vi: str) -> str:
+    """Dịch mức độ nghiêm trọng (Cao/Nghiêm trọng/Trung bình) sang tiếng Anh nếu đang ở chế độ English."""
+    if st.session_state.get("language", "vi") == "en":
+        return _SEVERITY_DISPLAY_EN.get(severity_vi, severity_vi)
+    return severity_vi
 def build_symmetric_lookup(db: dict) -> dict:
     """Đảm bảo tra cứu được cả 2 chiều A→B và B→A dù dữ liệu chỉ khai báo 1 chiều."""
     lookup = {k: dict(v) for k, v in db.items()}
@@ -2608,14 +2614,14 @@ else:
                         streak = record_missed_dose(drug_name, severity=severity)
                         st.warning(tr("home_missed_recorded", drug=drug_name, n=streak))
                         if streak >= 2 and severity in ("Cao", "Nghiêm trọng"):
-                                sent_to = send_escalation_alert_to_family(
+                            sent_to = send_escalation_alert_to_family(
                                 st.session_state.user_phone,
                                 st.session_state.current_profile.get("full_name", ""),
                                 drug_name, streak,
                             )
-                        if sent_to:
-                            st.error(tr("home_missed_escalated", n=len(sent_to),
-                                severity=severity, streak=streak))
+                            if sent_to:
+                                st.error(tr("home_missed_escalated", n=len(sent_to),
+                                    severity=localize_severity(severity), streak=streak))
                         st.rerun()
                     qty_left = med.get("Số lượng còn lại")
                     if qty_left is not None:
