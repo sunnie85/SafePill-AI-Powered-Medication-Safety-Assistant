@@ -16,7 +16,11 @@ from supabase import create_client
 from google import genai
 from PIL import Image
 from openvino_ocr_helper import run_openvino_ocr, parse_offline_ocr_text
-
+try:
+    from streamlit_autorefresh import st_autorefresh
+    AUTOREFRESH_AVAILABLE = True
+except ImportError:
+    AUTOREFRESH_AVAILABLE = False
 # ---- Mới: kiểu dữ liệu cấu hình công cụ tìm kiếm (grounding) của Gemini, dùng để ----
 # yêu cầu AI trích dẫn nguồn uy tín (Drugs.com, Dược thư Quốc gia VN...) khi trả lời.
 try:
@@ -1328,7 +1332,18 @@ INTERACTION_DATABASE = {
                     "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Clopidogrel Interactions)"},
 }
 
+# ---- MỚI: độ nguy hiểm khi BỎ LIỀU (khác với độ nguy hiểm khi TƯƠNG TÁC 2 thuốc) ----
+# Dùng để quyết định có escalate cho người thân khi người dùng bấm "❌ Bỏ lỡ" liên tiếp hay không.
+MISSED_DOSE_SEVERITY = {
+    "Warfarin": "Nghiêm trọng", "Digoxin": "Nghiêm trọng", "Metformin": "Nghiêm trọng",
+    "Aspirin": "Cao", "Simvastatin": "Cao", "Ibuprofen": "Cao",
+    "Losartan": "Trung bình", "Clopidogrel": "Trung bình", "Paracetamol": "Trung bình",
+}
+DEFAULT_MISSED_DOSE_SEVERITY = "Trung bình"  # mặc định an toàn: vẫn escalate nếu bỏ lỡ nhiều lần
 
+
+def get_missed_dose_severity(drug_name: str) -> str:
+    return MISSED_DOSE_SEVERITY.get(drug_name.strip().capitalize(), DEFAULT_MISSED_DOSE_SEVERITY)
 def build_symmetric_lookup(db: dict) -> dict:
     """Đảm bảo tra cứu được cả 2 chiều A→B và B→A dù dữ liệu chỉ khai báo 1 chiều."""
     lookup = {k: dict(v) for k, v in db.items()}
@@ -1681,6 +1696,12 @@ def build_adherence_task_key(drug_name: str, hhmm: str, med_obj) -> str:
 
 
 def check_and_auto_escalate_overdue_doses(med_data_valid: list) -> list:
+    """
+    Rà soát các thuốc trong lịch hôm nay: nếu đã quá AUTO_ESCALATION_MINUTES phút kể từ giờ hẹn
+    mà vẫn CHƯA được đánh dấu 'Đã uống', tự động gửi cảnh báo tới toàn bộ người thân đã 'accepted'
+    (nếu có) VÀ luôn trả về mục đó để hiển thị cảnh báo cho chính người dùng trên UI — không phụ
+    thuộc vào việc có người thân hay gửi thành công hay không.
+    """
     now = datetime.now()
     newly_escalated = []
     for med in med_data_valid:
@@ -1705,9 +1726,10 @@ def check_and_auto_escalate_overdue_doses(med_data_valid: list) -> list:
                 1,
             )
             st.session_state.auto_escalated_keys.add(key_name)
-            # LUÔN hiển thị banner cho chính người dùng, bất kể có người thân hay không
+            # LUÔN thêm vào danh sách hiển thị cho người dùng, kể cả khi chưa có người thân
             newly_escalated.append({"drug": drug_name, "time": hhmm, "sent_to": len(sent_to)})
     return newly_escalated
+   
 
 
 LOW_STOCK_THRESHOLD = 5
@@ -2464,6 +2486,9 @@ else:
         """, height=190)
         st.divider()
 
+        if AUTOREFRESH_AVAILABLE:
+            st_autorefresh(interval=60_000, key="home_overdue_autorefresh")
+
         auto_escalated_now = check_and_auto_escalate_overdue_doses(med_data_valid)
         if auto_escalated_now:
             for item in auto_escalated_now:
@@ -2471,9 +2496,9 @@ else:
                     st.error(tr("home_auto_escalate_msg", mins=AUTO_ESCALATION_MINUTES,
                                  time=item['time'], drug=item['drug'], n=item['sent_to']))
                 else:
-                    st.error(f"🚨 Đã quá {AUTO_ESCALATION_MINUTES} phút kể từ giờ hẹn **{item['time']}** "
-                             f"mà **{item['drug']}** vẫn chưa được xác nhận uống!")
-
+                    st.error(tr("home_auto_escalate_msg_no_family", mins=AUTO_ESCALATION_MINUTES,
+                                 time=item['time'], drug=item['drug']))
+                
         with st.expander(tr("home_custom_expander"), expanded=False):
             st.caption(tr("home_custom_caption"))
             with st.form("add_custom_reminder_form", clear_on_submit=True):
@@ -2575,20 +2600,18 @@ else:
                     if missed_clicked:
                         st.session_state.adherence_logs[key_name] = False
                         drug_name = med.get("Tên thuốc", "")
-                        info = INTERACTION_LOOKUP.get(drug_name.strip().capitalize())
-                        severity = info.get("severity") if info else "Chưa xác định"
-                        severity_display = loc_field(info, "severity") if info else severity
-                        streak = record_missed_dose(drug_name, severity="Medium")
+                        severity = get_missed_dose_severity(drug_name)
+                        streak = record_missed_dose(drug_name, severity=severity)
                         st.warning(tr("home_missed_recorded", drug=drug_name, n=streak))
                         if streak >= 2 and severity in ("Cao", "Nghiêm trọng"):
-                            sent_to = send_escalation_alert_to_family(
+                                sent_to = send_escalation_alert_to_family(
                                 st.session_state.user_phone,
                                 st.session_state.current_profile.get("full_name", ""),
                                 drug_name, streak,
                             )
-                            if sent_to:
-                                st.error(tr("home_missed_escalated", n=len(sent_to),
-                                             severity=severity_display, streak=streak))
+                        if sent_to:
+                            st.error(tr("home_missed_escalated", n=len(sent_to),
+                                severity=severity, streak=streak))
                         st.rerun()
                     qty_left = med.get("Số lượng còn lại")
                     if qty_left is not None:
