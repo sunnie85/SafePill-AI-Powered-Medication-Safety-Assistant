@@ -202,6 +202,8 @@ TRANSLATIONS = {
         "home_auto_escalate_msg": "🚨 Đã quá {mins} phút kể từ giờ hẹn **{time}** mà **{drug}** vẫn chưa "
                                    "được xác nhận uống — SafePill đã tự động báo cho {n} người thân đang "
                                    "theo dõi bạn.",
+        "home_auto_escalate_msg_no_family": "🚨 Đã quá {mins} phút kể từ giờ hẹn **{time}** mà **{drug}** "
+                                     "vẫn chưa được xác nhận uống!",
         "home_custom_expander": "➕ Thêm / quản lý nhắc nhở thủ công",
         "home_custom_caption": "Đặt nhắc nhở tuỳ ý (đo huyết áp, tái khám, uống nước...) không cần gắn với "
                                 "một loại thuốc cụ thể trong tủ thuốc.",
@@ -649,6 +651,8 @@ TRANSLATIONS = {
         "home_auto_escalate_msg": "🚨 It's been over {mins} minutes since **{time}** and **{drug}** is "
                                    "still not marked as taken — SafePill has automatically notified {n} "
                                    "family member(s) who follow you.",
+        "home_auto_escalate_msg_no_family": "🚨 It's been over {mins} minutes since **{time}** and **{drug}** "
+                                     "is still not marked as taken!",
         "home_custom_expander": "➕ Add / manage custom reminders",
         "home_custom_caption": "Set any reminder you like (blood pressure check, follow-up visit, drink "
                                 "water...) without linking it to a specific medication.",
