@@ -235,6 +235,9 @@ TRANSLATIONS = {
         "tts_read_aloud_prefix": "Đến giờ uống",
         "tts_read_aloud_dose": "liều",
         "tts_read_aloud_at": "vào",
+        "family_escalation_alert_msg": "🚨 CẢNH BÁO: {name} đã bỏ lỡ {miss_count} lần liên tiếp thuốc "
+                                "'{drug}' (mức độ nghiêm trọng cao). Vui lòng gọi điện hỏi thăm ngay!",
+        "family_escalation_sender_suffix": " (Cảnh báo tự động SafePill)",
 
         # ---- Tab Quét đơn thuốc ----
         "ocr_header": "📷 Số hóa đơn thuốc bằng AI",
@@ -746,7 +749,9 @@ TRANSLATIONS = {
         "cabinet_note_prefix": "📝 Instructions:",  
         "sched_note": "Instructions / Notes",  
         "home_note_prefix": "📝",
-
+        "family_escalation_alert_msg": "🚨 ALERT: {name} has missed {miss_count} consecutive dose(s) of "
+                                "'{drug}' (high severity). Please call to check on them now!",
+        "family_escalation_sender_suffix": " (SafePill Automatic Alert)",
         # ---- Digital Cabinet tab ----
         "cabinet_header": "🗄️ Digital medicine cabinet & adherence log",
         "cabinet_conflict_alert": "🚨 **WARNING:** Drug interactions detected in your current cabinet!",
@@ -1667,8 +1672,8 @@ def send_escalation_alert_to_family(owner_phone: str, owner_name: str, drug_name
     members = fetch_family_members(owner_phone)
     accepted = [m for m in members if m.get("status") == "accepted"]
     sent_to = []
-    alert_msg = (f"🚨 CẢNH BÁO: {owner_name or owner_phone} đã bỏ lỡ {miss_count} lần liên tiếp "
-                 f"thuốc '{drug_name}' (mức độ nghiêm trọng cao). Vui lòng gọi điện hỏi thăm ngay!")
+    alert_msg = tr("family_escalation_alert_msg", name=owner_name or owner_phone,
+                miss_count=miss_count, drug=drug_name)
     for member in accepted:
         member_phone = member.get("member_phone")
         if not member_phone:
@@ -1676,7 +1681,7 @@ def send_escalation_alert_to_family(owner_phone: str, owner_name: str, drug_name
         ok, _ = send_family_reminder(
             owner_phone=member_phone,
             sender_phone=owner_phone,
-            sender_name=f"{owner_name or owner_phone} (Cảnh báo tự động SafePill)",
+            sender_name=f"{owner_name or owner_phone}{tr('family_escalation_sender_suffix')}",
             message=alert_msg,
             target_time=None,
         )
