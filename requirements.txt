@@ -1,0 +1,9 @@
+streamlit
+supabase
+google-genai
+Pillow
+qrcode[pil]
+matplotlib
+openvino
+opencv-python-headless
+streamlit-autorefresh
