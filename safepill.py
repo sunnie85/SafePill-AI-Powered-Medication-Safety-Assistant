@@ -1692,6 +1692,7 @@ DOSE_EVENTS_TABLE = "safepill_dose_events"
 
 
 def log_dose_event(owner_phone: str, drug_name: str, scheduled_time: str, taken: bool) -> None:
+    st.write(f"🔍 [DEBUG] Đang gọi log_dose_event: owner={owner_phone}, drug={drug_name}, taken={taken}")
     """
     MỚI — Ghi 1 dòng "sự kiện uống thuốc" vào bảng safepill_dose_events mỗi khi người dùng
     tick "Đã uống" hoặc bấm "❌ Bỏ lỡ". Đây là dữ liệu thô dùng để sau này huấn luyện model
@@ -2625,6 +2626,7 @@ else:
                                 ), height=42,
                             )
                     if checked != taken:
+                        st.write(f"🔍 [DEBUG] Đã vào nhánh checked!=taken. checked={checked}, taken={taken}")
                         st.session_state.adherence_logs[key_name] = checked
                         if checked:
                             reset_missed_dose(med.get("Tên thuốc", ""))
@@ -2639,6 +2641,7 @@ else:
                         save_med_data_to_supabase()
                         st.rerun()
                     if missed_clicked:
+                        st.write(f"🔍 [DEBUG] Đã vào nhánh missed_clicked. drug_name={med.get('Tên thuốc', '')}")
                         st.session_state.adherence_logs[key_name] = False
                         drug_name = med.get("Tên thuốc", "")
                         severity = get_missed_dose_severity(drug_name)
