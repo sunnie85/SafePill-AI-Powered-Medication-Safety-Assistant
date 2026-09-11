@@ -7,3 +7,4 @@ matplotlib
 openvino
 opencv-python-headless
 streamlit-autorefresh
+face_recognition
