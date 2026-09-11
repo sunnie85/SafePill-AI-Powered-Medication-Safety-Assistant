@@ -1708,8 +1708,9 @@ def log_dose_event(owner_phone: str, drug_name: str, scheduled_time: str, taken:
             "day_of_week": today.weekday(),
             "taken": taken,
         }).execute()
+        st.toast(f"✅ [DEBUG] Đã ghi log: {drug_name} - taken={taken}", icon="✅")
     except Exception as e:
-        # Không chặn luồng chính của app nếu ghi log thất bại (VD: bảng chưa tồn tại)
+        st.error(f"❌ [DEBUG] Lỗi ghi log_dose_event: {e}")
         print(f"[log_dose_event] Không ghi được sự kiện uống thuốc: {e}")
 
 def record_missed_dose(drug_name: str, severity: str) -> int:
