@@ -8,6 +8,8 @@ import unicodedata
 import hashlib
 import json
 import io
+import face_recognition
+import numpy as np
 import base64
 import os
 import sys
@@ -1197,28 +1199,30 @@ def phone_already_registered(phone: str) -> bool:
 # ---- Mới: danh sách nhóm máu để lưu vào hồ sơ, phục vụ cấp cứu khẩn cấp ----
 BLOOD_TYPE_OPTIONS = ["Chưa rõ", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
 
+FACE_DISTANCE_THRESHOLD = 0.55  # cần tự kiểm thử; càng thấp càng nghiêm ngặt
 
-def average_hash(image_bytes: bytes, hash_size: int = 8) -> str:
+
+def get_face_embedding(image_bytes: bytes):
     """
-    Perceptual hash (aHash) đơn giản dùng để đối chiếu ảnh khuôn mặt ở mức demo.
-    Đây KHÔNG phải nhận diện khuôn mặt sinh trắc học thật sự (không dùng embedding
-    khuôn mặt chuyên dụng như FaceNet/Dlib) — phù hợp cho mục đích minh họa/khoa học
-    kỹ thuật, và cần nâng cấp lên thư viện nhận diện khuôn mặt chuyên dụng khi triển
-    khai thực tế.
+    Trả về vector đặc trưng khuôn mặt (128 chiều) từ ảnh, hoặc None nếu không phát hiện
+    được khuôn mặt nào. Thay thế average_hash (chỉ so sánh độ sáng ảnh, dễ nhận nhầm).
     """
     try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("L").resize((hash_size, hash_size))
-        pixels = list(img.getdata())
-        avg = sum(pixels) / len(pixels)
-        return "".join("1" if p > avg else "0" for p in pixels)
-    except Exception:
-        return ""
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_array = np.array(img)
+        face_locations = face_recognition.face_locations(img_array)
+        if not face_locations:
+            return None
+        encodings = face_recognition.face_encodings(img_array, known_face_locations=face_locations)
+        return encodings[0] if encodings else None
+    except Exception as e:
+        print(f"[get_face_embedding] Lỗi xử lý ảnh khuôn mặt: {e}")
+        return None
 
 
-def hamming_distance(hash1: str, hash2: str) -> int:
-    if not hash1 or not hash2 or len(hash1) != len(hash2):
-        return 999
-    return sum(c1 != c2 for c1, c2 in zip(hash1, hash2))
+def face_distance(embedding_a, embedding_b) -> float:
+    """Khoảng cách Euclidean giữa 2 vector khuôn mặt — càng nhỏ càng giống nhau."""
+    return float(np.linalg.norm(np.array(embedding_a) - np.array(embedding_b)))
 
 
 def extract_json_array(raw_text: str):
@@ -2222,26 +2226,29 @@ elif not st.session_state.logged_in:
                 if face_img:
                     with st.spinner(tr("face_login_matching")):
                         try:
-                            login_hash = average_hash(face_img.getvalue())
-                            if not login_hash:
+                            login_embedding = get_face_embedding(face_img.getvalue())
+                            if login_embedding is None:
                                 st.error(tr("face_login_bad_image"))
                             else:
                                 try:
-                                    res = supabase.table(TABLE).select("phone, full_name, pin, face_hash").execute()
+                                    res = supabase.table(TABLE).select("phone, full_name, pin, face_embedding").execute()
                                 except Exception as col_err:
                                     st.error(tr("face_login_missing_col"))
                                     res = None
                                 if res is not None:
-                                    candidates = [row for row in (res.data or []) if row.get("face_hash")]
-                                    best_match, best_distance = None, 999
+                                    candidates = [row for row in (res.data or []) if row.get("face_embedding")]
+                                    best_match, best_distance = None, 999.0
                                     for row in candidates:
-                                        dist = hamming_distance(login_hash, row["face_hash"])
+                                        try:
+                                            stored_embedding = json.loads(row["face_embedding"])
+                                        except Exception:
+                                            continue
+                                        dist = face_distance(login_embedding, stored_embedding)
                                         if dist < best_distance:
                                             best_distance, best_match = dist, row
-                                    FACE_MATCH_THRESHOLD = 10
                                     if not candidates:
                                         st.warning(tr("face_login_no_accounts"))
-                                    elif best_match and best_distance <= FACE_MATCH_THRESHOLD:
+                                    elif best_match and best_distance <= FACE_DISTANCE_THRESHOLD:
                                         full_res = supabase.table(TABLE).select("*").eq(
                                             "phone", best_match["phone"]
                                         ).execute()
@@ -2310,23 +2317,23 @@ elif not st.session_state.logged_in:
                                     "blood_type": r_blood_type,
                                     "language": r_language,
                                 }
-                                face_hash = None
+                                face_embedding = None
                                 if enable_face and reg_face_img is not None:
                                     face_bytes = reg_face_img.getvalue()
-                                    face_hash = average_hash(face_bytes)
-                                    if not face_hash:
+                                    face_embedding = get_face_embedding(face_bytes)
+                                    if face_embedding is None:
                                         st.warning(tr("register_warning_face_fail"))
                                     else:
                                         new_row["face_data"] = base64.b64encode(face_bytes).decode("utf-8")
-                                        new_row["face_hash"] = face_hash
+                                        new_row["face_embedding"] = json.dumps(face_embedding.tolist())
                                 try:
                                     resp = supabase.table(TABLE).insert(new_row).execute()
                                 except Exception as insert_err:
                                     err_text = str(insert_err)
                                     missing_cols = []
-                                    if face_hash and ("face_data" in err_text or "face_hash" in err_text
+                                    if face_embedding is not None and ("face_data" in err_text or "face_embedding" in err_text
                                                        or "column" in err_text.lower()):
-                                        missing_cols += ["face_data", "face_hash"]
+                                        missing_cols += ["face_data", "face_embedding"]
                                     if "blood_type" in err_text or "column" in err_text.lower():
                                         missing_cols.append("blood_type")
                                     if "language" in err_text or "column" in err_text.lower():
@@ -3262,7 +3269,7 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
 
             st.divider()
             st.subheader(tr("acc_faceid_title"))
-            has_face = bool(st.session_state.current_profile.get("face_hash"))
+            has_face = bool(st.session_state.current_profile.get("face_embedding"))
             if has_face:
                 st.success(tr("acc_faceid_registered"))
             else:
@@ -3272,15 +3279,16 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                 if new_face_img is not None and st.button(tr("acc_faceid_save_btn"), key="save_face_btn"):
                     try:
                         face_bytes = new_face_img.getvalue()
-                        new_face_hash = average_hash(face_bytes)
-                        if not new_face_hash:
+                        new_face_embedding = get_face_embedding(face_bytes)
+                        if new_face_embedding is None:
                             st.error(tr("acc_faceid_bad_image"))
                         else:
+                            embedding_json = json.dumps(new_face_embedding.tolist())
                             supabase.table(TABLE).update({
                                 "face_data": base64.b64encode(face_bytes).decode("utf-8"),
-                                "face_hash": new_face_hash,
+                                "face_embedding": embedding_json,
                             }).eq("phone", st.session_state.user_phone).execute()
-                            st.session_state.current_profile["face_hash"] = new_face_hash
+                            st.session_state.current_profile["face_embedding"] = embedding_json
                             st.success(tr("acc_faceid_saved"))
                             st.rerun()
                     except Exception as e:
@@ -3288,10 +3296,10 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
             if has_face:
                 if st.button(tr("acc_faceid_remove_btn"), key="remove_face_btn"):
                     try:
-                        supabase.table(TABLE).update({"face_data": None, "face_hash": None}).eq(
+                        supabase.table(TABLE).update({"face_data": None, "face_embedding": None}).eq(
                             "phone", st.session_state.user_phone
                         ).execute()
-                        st.session_state.current_profile["face_hash"] = None
+                        st.session_state.current_profile["face_embedding"] = None
                         st.success(tr("acc_faceid_removed"))
                         st.rerun()
                     except Exception as e:
