@@ -370,7 +370,9 @@ TRANSLATIONS = {
         "report_download_pdf": "📄 Tải báo cáo PDF",
         "report_download_png": "🖼️ Tải ảnh PNG",
         "report_bring_to_doctor": "💡 Mang file PDF/ảnh này đi khám để bác sĩ nắm được mức độ tuân thủ điều trị của bạn.",
-
+        "report_anomaly_alert": "⚠️ **Cảnh báo bất thường:** Tỷ lệ tuân thủ ngày {date} chỉ đạt **{latest}%**, "
+                                "giảm **{drop} điểm phần trăm** so với mức trung bình gần đây (**{avg}%**). "
+                                "Có thể đây là dấu hiệu cần quan tâm nhiều hơn đến việc uống thuốc.",
         # ---- Tab QR khẩn cấp ----
         "qr_header": "🆘 Thẻ QR khẩn cấp",
         "qr_info": "ℹ️ Mã QR này chứa danh sách thuốc đang dùng, cảnh báo tương tác và số điện thoại "
@@ -822,7 +824,9 @@ TRANSLATIONS = {
         "report_download_pdf": "📄 Download PDF report",
         "report_download_png": "🖼️ Download PNG image",
         "report_bring_to_doctor": "💡 Bring this PDF/image file to your appointment so your doctor can see your adherence level.",
-
+        "report_anomaly_alert": "⚠️ **Anomaly detected:** Adherence on {date} was only **{latest}%**, "
+                                "a drop of **{drop} percentage points** from the recent average (**{avg}%**). "
+                                "This may be worth paying closer attention to.",
         # ---- Emergency QR tab ----
         "qr_header": "🆘 Emergency QR card",
         "qr_info": "ℹ️ This QR code contains your current medications, interaction warnings, and family "
@@ -3089,6 +3093,7 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                 if ok:
                     st.session_state.adherence_logged_today = True
                     st.success(tr("report_save_success"))
+                    st.rerun()
                 else:
                     st.error(ADHERENCE_HISTORY_MISSING_MSG if _is_missing_table_error(err)
                               else f"{tr('family_send_error')} {err}")
@@ -3102,6 +3107,12 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
             st.warning(tr("report_no_matplotlib"))
             st.table(history_rows)
         else:
+            anomaly = detect_adherence_anomaly(history_rows)
+            if anomaly:
+                st.warning(tr("report_anomaly_alert",
+                               date=anomaly["date"], latest=anomaly["latest_rate"],
+                               drop=anomaly["drop"], avg=anomaly["avg_prev"]))
+
             dates = [r["log_date"] for r in history_rows]
             rates = [float(r.get("rate", 0)) for r in history_rows]
             fig, ax = plt.subplots(figsize=(9, 4))
@@ -3131,6 +3142,36 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
             plt.close(fig)
             st.caption(tr("report_bring_to_doctor"))
 
+ANOMALY_DROP_THRESHOLD = 25  # % — tụt quá ngưỡng này so với trung bình 7 ngày thì cảnh báo
+ANOMALY_MIN_HISTORY_DAYS = 3  # cần ít nhất N ngày dữ liệu mới đủ tin cậy để so sánh
+
+
+def detect_adherence_anomaly(history_rows: list):
+    """
+    So tỷ lệ tuân thủ NGÀY GẦN NHẤT với trung bình trượt của các ngày trước đó.
+    Trả về dict cảnh báo nếu phát hiện tụt bất thường, hoặc None nếu bình thường
+    hoặc chưa đủ dữ liệu lịch sử để so sánh.
+    """
+    if len(history_rows) < ANOMALY_MIN_HISTORY_DAYS + 1:
+        return None
+
+    sorted_rows = sorted(history_rows, key=lambda r: r["log_date"])
+    latest = sorted_rows[-1]
+    previous = sorted_rows[:-1]
+
+    prev_rates = [float(r.get("rate", 0)) for r in previous[-7:]]
+    avg_prev = sum(prev_rates) / len(prev_rates)
+    latest_rate = float(latest.get("rate", 0))
+
+    drop = avg_prev - latest_rate
+    if drop >= ANOMALY_DROP_THRESHOLD:
+        return {
+            "latest_rate": latest_rate,
+            "avg_prev": round(avg_prev, 1),
+            "drop": round(drop, 1),
+            "date": latest["log_date"],
+        }
+    return None
     # ---------------- TAB THẺ QR KHẨN CẤP ----------------
     with tab_qr:
         st.header(tr("qr_header"))
