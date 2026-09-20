@@ -4,12 +4,11 @@ import streamlit.components.v1 as components
 import time
 import re
 import os
+import requests
 import unicodedata
 import hashlib
 import json
 import io
-import face_recognition
-import numpy as np
 import base64
 import os
 import sys
@@ -83,8 +82,6 @@ DISCLAIMER = (
 # =====================================================================================
 # 1B. MỚI: HỆ THỐNG ĐA NGÔN NGỮ (i18n) — Việt / English
 # =====================================================================================
-# Cách mở rộng: thêm 1 key mới vào CẢ HAI dict "vi" và "en" bên dưới, rồi gọi tr("ten_key")
-# ở bất kỳ đâu trong UI. Nếu thiếu key ở "en", tr() sẽ tự rơi về bản tiếng Việt để tránh vỡ giao diện.
 LANGUAGE_OPTIONS = {"vi": "Tiếng Việt", "en": "English"}
 
 TRANSLATIONS = {
@@ -337,7 +334,7 @@ TRANSLATIONS = {
                         "(đã kiểm tra cả thuốc–thuốc và thuốc–thực phẩm/thảo dược).",
         "matrix_footer_caption": "Lưu ý: cơ sở dữ liệu minh họa chỉ bao gồm một số hoạt chất và thực "
                                   "phẩm/thảo dược phổ biến, không thay thế tra cứu dược thư chính thức.",
-        
+
 
         # ---- Tab Hỏi đáp AI ----
         "expert_header": "🤖 Trợ lý hỏi đáp về thuốc & sức khỏe",
@@ -541,7 +538,6 @@ TRANSLATIONS = {
     },
 
     "en": {
-        # ---- Onboarding ----
         "app_title": "💊 SafePill",
         "app_tagline": "Smart medication assistant — scan prescriptions, detect dangerous interactions, "
                         "and get reminded to take your medicine on time.",
@@ -552,8 +548,6 @@ TRANSLATIONS = {
         "disclaimer": ("⚠️ SafePill is a medication reminder and lookup assistant, "
                         "NOT a substitute for a doctor's or pharmacist's diagnosis. "
                         "In an emergency, please contact the nearest medical facility."),
-
-        # ---- Sign in / Sign up ----
         "auth_header": "🔐 Sign In / Sign Up",
         "tab_login": "🔑 Sign In",
         "tab_register": "🆕 Quick Sign Up (5 taps)",
@@ -583,7 +577,6 @@ TRANSLATIONS = {
         "face_login_no_match": "❌ No matching face found in the system. "
                                 "Please sign in with your PIN or create a new account.",
         "face_login_error": "FaceID authentication error:",
-
         "register_caption": "Fill in all 4 required fields (phone, full name, PIN, blood type) — FaceID "
                              "remains optional, you can enable it now or add it later.",
         "full_name_label": "👤 Full name",
@@ -619,8 +612,6 @@ TRANSLATIONS = {
         "register_success": "✅ Account created successfully!",
         "register_error_exists": "❌ The phone number '{phone}' already exists. Please sign in instead.",
         "register_error_db": "❌ Database error:",
-
-        # ---- Sidebar ----
         "sidebar_hello": "Hello",
         "sidebar_phone": "Phone",
         "sidebar_blood": "🩸 Blood type",
@@ -631,8 +622,6 @@ TRANSLATIONS = {
                                     "see **Settings → Family** tab.",
         "sidebar_elderly_toggle": "🔎 Large text mode (easier to read)",
         "sidebar_logout": "🚪 Log out",
-
-        # ---- Dashboard ----
         "dashboard_title": "💊 SafePill – Medication Management Center",
         "metric_med_count": "Medications managed",
         "metric_interaction": "Drug interactions",
@@ -642,8 +631,6 @@ TRANSLATIONS = {
         "metric_interaction_safe_delta": "No conflicts detected",
         "metric_schedule": "Today's schedule",
         "metric_schedule_unit": "time slot(s)",
-
-        # ---- Tab names ----
         "tab_home": "🏠 Today",
         "tab_ocr": "📷 Scan Prescription",
         "tab_cabinet": "🗄️ Digital Cabinet",
@@ -652,8 +639,6 @@ TRANSLATIONS = {
         "tab_report": "📈 Adherence Report",
         "tab_qr": "🆘 Emergency QR",
         "tab_settings": "⚙️ Settings",
-
-        # ---- Today tab ----
         "home_header": "🏠 Today's medication schedule",
         "home_auto_escalate_msg": "🚨 It's been over {mins} minutes since **{time}** and **{drug}** is "
                                    "still not marked as taken — SafePill has automatically notified {n} "
@@ -692,8 +677,6 @@ TRANSLATIONS = {
         "tts_read_aloud_prefix": "Time to take",
         "tts_read_aloud_dose": "dose",
         "tts_read_aloud_at": "at",
-
-        # ---- Scan Prescription tab ----
         "ocr_header": "📷 Digitize your prescription with AI",
         "ocr_info": "Take a photo directly, or upload an existing prescription/medical record image "
                     "(handwritten, pill blister, or scan) — the system will automatically extract the "
@@ -748,15 +731,14 @@ TRANSLATIONS = {
         "time_morning": "Morning", "time_noon": "Noon", "time_afternoon": "Afternoon", "time_evening": "Evening",
         "shape_round": "Round", "shape_oval": "Oval", "shape_tablet": "Tablet",
         "shape_square": "Square", "shape_capsule": "Capsule",
-        "ocr_manual_note": "Instructions / Notes (drink before/after meals, avoid certain foods...)",  
-        "ocr_manual_note_placeholder": "e.g., Drink after a full meal",  
-        "cabinet_note_prefix": "📝 Instructions:",  
-        "sched_note": "Instructions / Notes",  
+        "ocr_manual_note": "Instructions / Notes (drink before/after meals, avoid certain foods...)",
+        "ocr_manual_note_placeholder": "e.g., Drink after a full meal",
+        "cabinet_note_prefix": "📝 Instructions:",
+        "sched_note": "Instructions / Notes",
         "home_note_prefix": "📝",
         "family_escalation_alert_msg": "🚨 ALERT: {name} has missed {miss_count} consecutive dose(s) of "
                                 "'{drug}' (high severity). Please call to check on them now!",
         "family_escalation_sender_suffix": " (SafePill Automatic Alert)",
-        # ---- Digital Cabinet tab ----
         "cabinet_header": "🗄️ Digital medicine cabinet & adherence log",
         "cabinet_conflict_alert": "🚨 **WARNING:** Drug interactions detected in your current cabinet!",
         "cabinet_severity_label": "Severity",
@@ -772,8 +754,6 @@ TRANSLATIONS = {
         "cabinet_clinic_prefix": "🏥 Clinic:",
         "cabinet_doctor_prefix": "👨‍⚕️ Physician:",
         "cabinet_pharmacy_prefix": "💊 Pharmacy:",
-
-        # ---- Interaction Lookup tab ----
         "matrix_header": "🔬 Interaction lookup & simulator",
         "matrix_caption": "Quickly check two medications, or one medication against a food/herbal item "
                            "(e.g. alcohol, grapefruit, traditional remedies...) before combining them.",
@@ -792,8 +772,6 @@ TRANSLATIONS = {
                         "drug–drug and drug–food/herbal interactions were checked).",
         "matrix_footer_caption": "Note: this illustrative database only covers some common active "
                                   "ingredients and foods/herbs, and does not replace an official pharmacopeia lookup.",
-        
-        # ---- AI Q&A tab ----
         "expert_header": "🤖 Medication & health Q&A assistant",
         "expert_grounding_caption": "🔎 The assistant is instructed to prioritize reputable sources "
                                      "(Drugs.com, national pharmacopeias, MedlinePlus, major hospitals...) "
@@ -805,8 +783,6 @@ TRANSLATIONS = {
         "expert_error": "AI connection error:",
         "expert_anon_name": "Anonymous",
         "expert_lang_instruction": "Please answer concisely, accurately, and clearly in English.",
-
-        # ---- Adherence Report tab ----
         "report_header": "📈 Treatment adherence report",
         "report_caption": "Track your daily adherence rate and export a report to bring to your doctor.",
         "report_today_rate": "Today's adherence rate",
@@ -827,7 +803,6 @@ TRANSLATIONS = {
         "report_anomaly_alert": "⚠️ **Anomaly detected:** Adherence on {date} was only **{latest}%**, "
                                 "a drop of **{drop} percentage points** from the recent average (**{avg}%**). "
                                 "This may be worth paying closer attention to.",
-        # ---- Emergency QR tab ----
         "qr_header": "🆘 Emergency QR card",
         "qr_info": "ℹ️ This QR code contains your current medications, interaction warnings, and family "
                    "contact numbers. Print it and attach it to your wallet or medicine cabinet — in an "
@@ -855,8 +830,6 @@ TRANSLATIONS = {
                                      "afterward to make sure the QR code isn't obscured.",
         "qr_footer_caption": "ℹ️ Note: the QR code only contains information you entered in SafePill, and "
                               "does not replace an official medical record. Update it whenever your medications change.",
-
-        # ---- Settings tab ----
         "settings_header": "⚙️ Settings",
         "settings_sub_account": "👤 Account",
         "settings_sub_schedule": "⏰ Medication schedule",
@@ -905,7 +878,6 @@ TRANSLATIONS = {
         "acc_faceid_remove_btn": "🗑️ Remove FaceID",
         "acc_faceid_removed": "✅ FaceID removed from this account.",
         "acc_faceid_remove_error": "Error removing FaceID:",
-
         "sched_title": "Adjust reminder times & dosage for each medication",
         "sched_empty": "No medications in your cabinet to schedule yet. Scan a prescription or add one manually.",
         "sched_med_fallback": "Medication #{n}",
@@ -922,7 +894,6 @@ TRANSLATIONS = {
         "sched_footer_caption": "💡 Reminder times and clinic/physician/pharmacy details are saved "
                                  "persistently to Supabase (the 'diagnostic' column), so they won't be "
                                  "lost on reload or re-login.",
-
         "notif_title": "Customize reminder notifications & sound",
         "notif_caption": "Sound plays alongside a browser notification on your phone/computer when it's "
                           "time to take a medication or a custom reminder. Notification permission is "
@@ -943,7 +914,6 @@ TRANSLATIONS = {
         "notif_tts_caption": "👴 For elderly users who aren't comfortable with small text: tap the 🔊 "
                               "button next to each medication to hear its name, dosage, and time read "
                               "aloud by the browser's voice.",
-
         "family_title": "👪 Family members who remind me",
         "family_caption": "Invite a family member (who already has a SafePill account) so they can send "
                            "you reminders directly — for example, \"Remember to take your blood pressure "
@@ -997,12 +967,6 @@ TRANSLATIONS = {
 
 
 def tr(key: str, **kwargs) -> str:
-    """
-    Trả về chuỗi đã dịch theo ngôn ngữ hiện tại trong session (mặc định 'vi' nếu chưa đăng nhập
-    hoặc chưa có lựa chọn). Nếu thiếu key ở ngôn ngữ hiện tại, tự rơi về bản tiếng Việt; nếu
-    vẫn thiếu, trả về chính key đó để dễ phát hiện lỗi thiếu bản dịch khi mở rộng.
-    Hỗ trợ định dạng chuỗi kiểu .format(**kwargs), ví dụ: tr("home_low_stock", drug="Aspirin", qty=3)
-    """
     lang = st.session_state.get("language", "vi")
     text = TRANSLATIONS.get(lang, TRANSLATIONS["vi"]).get(key)
     if text is None:
@@ -1016,19 +980,11 @@ def tr(key: str, **kwargs) -> str:
 
 
 def current_lang_name() -> str:
-    """Tên ngôn ngữ hiện tại bằng chính ngôn ngữ đó, dùng khi cần chỉ định cho Gemini."""
     lang = st.session_state.get("language", "vi")
     return "tiếng Việt" if lang == "vi" else "English"
 
 
 def render_language_switcher() -> None:
-    """
-    MỚI — Bộ chọn ngôn ngữ hiển thị TRƯỚC khi đăng nhập/đăng ký (ở màn Onboarding và màn Xác thực),
-    để người dùng đổi ngôn ngữ ngay từ đầu, không cần đợi đến lúc đăng ký xong. Đặt ở góc phải màn
-    hình, đổi giá trị là toàn bộ giao diện (kể cả 2 màn hình chưa đăng nhập) chuyển ngôn ngữ ngay lập
-    tức nhờ rerun. Lựa chọn này chỉ áp dụng cho phiên hiện tại; sau khi đăng nhập, ngôn ngữ đã lưu
-    trong hồ sơ (nếu có) sẽ ghi đè lại theo load_profile_into_session().
-    """
     lc1, lc2 = st.columns([3, 1])
     with lc2:
         current = st.session_state.get("language", "vi")
@@ -1044,16 +1000,9 @@ def render_language_switcher() -> None:
             st.rerun()
 
 # =====================================================================================
-# 2. KẾT NỐI DỊCH VỤ (Supabase + Gemini) - có kiểm tra lỗi rõ ràng
+# 2. KẾT NỐI DỊCH VỤ (Supabase + Gemini)
 # =====================================================================================
 def load_secrets():
-    """
-    Đọc cấu hình theo THỨ TỰ ƯU TIÊN sau, để Ban giám khảo chỉ cần điền trực tiếp vào
-    file appsettings/appsettings.json (đổi tên từ appsettings.example.json) mà KHÔNG
-    cần tạo thêm bất kỳ file .streamlit/secrets.toml nào:
-      1) File appsettings/appsettings.json nằm cùng cấp với file .py này
-      2) st.secrets — dùng khi triển khai trên Streamlit Community Cloud
-    """
     config = {}
     json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "appsettings", "appsettings.json")
     if os.path.exists(json_path):
@@ -1066,7 +1015,6 @@ def load_secrets():
 
     def get_value(key):
         val = config.get(key)
-        # Bỏ qua nếu vẫn còn là placeholder dạng "Điền ... vào đây" chưa được điền thật
         if val and "Điền" not in str(val) and str(val).strip():
             return val
         if key in st.secrets:
@@ -1103,75 +1051,20 @@ except Exception as e:
     st.stop()
 
 TABLE = "thuy_tien"
-# Bảng 'thuy_tien': id, phone, full_name, pin, health_tree_score, face_data, face_hash, blood_type,
-# language, diagnostic
-# Cột 'diagnostic' dùng để lưu tủ thuốc (kèm nơi khám/bác sĩ/nơi cấp thuốc) dưới dạng chuỗi JSON,
-# nhờ đó dữ liệu không còn bị mất khi tải lại trang hoặc đăng xuất.
-# Cột 'language' (MỚI) lưu ngôn ngữ hiển thị ưa thích ('vi' hoặc 'en'), cần chạy migration:
-#   alter table thuy_tien add column if not exists language text default 'vi';
-#
-# ---- QUAN TRỌNG: đảm bảo 1 số điện thoại chỉ đăng ký được 1 tài khoản ----
-# Ứng dụng đã kiểm tra trùng số điện thoại ở tầng code (xem phone_already_registered() và
-# submit_reg bên dưới), nhưng để chống trường hợp 2 người bấm "Đăng ký" gần như đồng thời
-# (race condition), NÊN thêm ràng buộc UNIQUE ngay trên cột 'phone' tại Supabase:
-#   -- Bước 1: kiểm tra xem đã có số điện thoại trùng nhau trong bảng chưa
-#   select phone, count(*) from thuy_tien group by phone having count(*) > 1;
-#   -- Bước 2 (nếu bước 1 không trả về dòng nào): thêm ràng buộc duy nhất
-#   alter table thuy_tien add constraint thuy_tien_phone_unique unique (phone);
-# Nếu bước 1 phát hiện dữ liệu trùng sẵn có, cần xử lý (xoá/gộp) các bản ghi trùng trước khi
-# chạy bước 2, nếu không lệnh ALTER TABLE sẽ báo lỗi.
-
-# ---- Mới: bảng phục vụ tính năng "Nhắc nhở từ người thân" ----
-# Cần tạo 2 bảng này bằng SQL migration trên Supabase trước khi dùng (nếu chưa có sẵn):
-#
-# create table safepill_family_links (
-#     id bigserial primary key,
-#     owner_phone text not null,        -- người được theo dõi (chủ tủ thuốc)
-#     member_phone text not null,       -- người thân được phép gửi nhắc nhở
-#     member_name text,
-#     status text default 'pending',    -- 'pending' | 'accepted' | 'declined'
-#     created_at timestamptz default now()
-# );
-#
-# create table safepill_family_reminders (
-#     id bigserial primary key,
-#     owner_phone text not null,        -- người sẽ nhận nhắc nhở
-#     sender_phone text,
-#     sender_name text,
-#     message text not null,
-#     target_time text,                 -- 'HH:MM' hoặc NULL nếu gửi ngay lập tức
-#     delivered boolean default false,
-#     created_at timestamptz default now()
-# );
 FAMILY_LINKS_TABLE = "safepill_family_links"
 FAMILY_REMINDERS_TABLE = "safepill_family_reminders"
-
-# ---- Mới: bảng lưu lịch sử tuân thủ điều trị theo ngày (phục vụ biểu đồ & xuất báo cáo) ----
-# create table safepill_adherence_history (
-#     id bigserial primary key,
-#     owner_phone text not null,
-#     log_date date not null,
-#     total_tasks int default 0,
-#     done_tasks int default 0,
-#     rate numeric default 0,
-#     created_at timestamptz default now(),
-#     unique (owner_phone, log_date)
-# );
 ADHERENCE_HISTORY_TABLE = "safepill_adherence_history"
+DOSE_EVENTS_TABLE = "safepill_dose_events"
 
 
 # =====================================================================================
 # 3. HÀM TIỆN ÍCH BẢO MẬT & XỬ LÝ DỮ LIỆU
 # =====================================================================================
 def hash_pin(pin: str) -> str:
-    """Băm mã PIN bằng SHA-256 trước khi lưu trữ, không bao giờ lưu PIN dạng thô."""
     return hashlib.sha256(pin.strip().encode("utf-8")).hexdigest()
-    
+
+
 def verify_pin(entered_pin: str, stored_value: str) -> bool:
-    """
-    Hỗ trợ tương thích ngược: nếu bản ghi cũ còn lưu PIN dạng thô (4 ký tự),
-    vẫn so khớp được; bản ghi mới (đã băm SHA-256 dài 64 ký tự) so khớp theo hash.
-    """
     if not stored_value:
         return False
     stored_value = str(stored_value).strip()
@@ -1185,52 +1078,88 @@ def validate_phone(phone: str) -> bool:
 
 
 def phone_already_registered(phone: str) -> bool:
-    """
-    MỚI — Kiểm tra ở tầng ứng dụng xem số điện thoại đã có tài khoản hay chưa, TRƯỚC khi insert.
-    Đây là lớp bảo vệ chính (không phụ thuộc vào việc bảng có ràng buộc UNIQUE hay không); nên
-    kết hợp thêm ràng buộc UNIQUE(phone) ở Supabase (xem ghi chú tại phần khai báo TABLE) để chống
-    trường hợp 2 yêu cầu đăng ký gửi lên gần như đồng thời (race condition).
-    """
     try:
         res = supabase.table(TABLE).select("phone").eq("phone", phone.strip()).limit(1).execute()
         return bool(res.data)
     except Exception:
-        # Nếu không kiểm tra được (lỗi kết nối...), vẫn để luồng insert phía sau tự bắt lỗi
-        # trùng khoá (nếu bảng có UNIQUE constraint) thay vì chặn cứng người dùng.
         return False
 
 
-# ---- Mới: danh sách nhóm máu để lưu vào hồ sơ, phục vụ cấp cứu khẩn cấp ----
-BLOOD_TYPE_OPTIONS = ["Chưa rõ", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+TRUSTED_MEDICAL_DOMAINS = (
+    "drugs.com", "medlineplus.gov", "nih.gov", "fda.gov", "who.int",
+    "mayoclinic.org", "cdc.gov", "rxlist.com", "webmd.com",
+)
 
-FACE_DISTANCE_THRESHOLD = 0.55  # cần tự kiểm thử; càng thấp càng nghiêm ngặt
 
-
-def get_face_embedding(image_bytes: bytes):
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_openfda_drug_info(drug_name: str) -> str:
     """
-    Trả về vector đặc trưng khuôn mặt (128 chiều) từ ảnh, hoặc None nếu không phát hiện
-    được khuôn mặt nào. Thay thế average_hash (chỉ so sánh độ sáng ảnh, dễ nhận nhầm).
+    Tra cứu thông tin thuốc từ openFDA (kho dữ liệu nhãn thuốc chính thức của FDA Mỹ,
+    công khai, miễn phí, không cần API key). Trả về đoạn tóm tắt ngắn hoặc chuỗi rỗng
+    nếu không tìm thấy/lỗi kết nối.
     """
     try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img_array = np.array(img)
-        face_locations = face_recognition.face_locations(img_array)
-        if not face_locations:
-            return None
-        encodings = face_recognition.face_encodings(img_array, known_face_locations=face_locations)
-        return encodings[0] if encodings else None
+        url = "https://api.fda.gov/drug/label.json"
+        params = {"search": f'openfda.generic_name:"{drug_name}"', "limit": 1}
+        resp = requests.get(url, params=params, timeout=5)
+        if resp.status_code != 200:
+            return ""
+        results = resp.json().get("results")
+        if not results:
+            return ""
+        label = results[0]
+        parts = []
+        for field, title in [
+            ("indications_and_usage", "Chỉ định"),
+            ("dosage_and_administration", "Liều dùng"),
+            ("warnings", "Cảnh báo"),
+            ("drug_interactions", "Tương tác thuốc"),
+        ]:
+            val = label.get(field)
+            if val:
+                text = val[0][:500]
+                parts.append(f"{title}: {text}")
+        if not parts:
+            return ""
+        return f"[Dữ liệu FDA về {drug_name}]\n" + "\n".join(parts)
+    except Exception:
+        return ""
+
+
+def is_trusted_medical_source(uri: str) -> bool:
+    return any(domain in uri.lower() for domain in TRUSTED_MEDICAL_DOMAINS)
+
+
+BLOOD_TYPE_OPTIONS = ["Chưa rõ", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+
+FACE_MATCH_THRESHOLD = 10  # ngưỡng khoảng cách Hamming; càng thấp càng nghiêm ngặt
+
+
+def average_hash(image_bytes: bytes, hash_size: int = 8) -> str:
+    """
+    Perceptual hash (aHash) đơn giản dùng để đối chiếu ảnh khuôn mặt ở mức demo.
+    Đây KHÔNG phải nhận diện khuôn mặt sinh trắc học thật sự (không dùng embedding
+    khuôn mặt chuyên dụng như FaceNet/Dlib) — phù hợp cho mục đích minh họa/khoa học
+    kỹ thuật, và cần nâng cấp lên thư viện nhận diện khuôn mặt chuyên dụng (face_recognition)
+    khi hạ tầng deploy đủ tài nguyên để biên dịch dlib.
+    """
+    try:
+        img = Image.open(io.BytesIO(image_bytes)).convert("L").resize((hash_size, hash_size))
+        pixels = list(img.getdata())
+        avg = sum(pixels) / len(pixels)
+        return "".join("1" if p > avg else "0" for p in pixels)
     except Exception as e:
-        print(f"[get_face_embedding] Lỗi xử lý ảnh khuôn mặt: {e}")
-        return None
+        print(f"[average_hash] Lỗi xử lý ảnh khuôn mặt: {e}")
+        return ""
 
 
-def face_distance(embedding_a, embedding_b) -> float:
-    """Khoảng cách Euclidean giữa 2 vector khuôn mặt — càng nhỏ càng giống nhau."""
-    return float(np.linalg.norm(np.array(embedding_a) - np.array(embedding_b)))
+def hamming_distance(hash1: str, hash2: str) -> int:
+    if not hash1 or not hash2 or len(hash1) != len(hash2):
+        return 999
+    return sum(c1 != c2 for c1, c2 in zip(hash1, hash2))
 
 
 def extract_json_array(raw_text: str):
-    """Trích xuất mảng JSON từ phản hồi AI dù có lẫn văn bản/markdown thừa."""
     cleaned = raw_text.strip()
     cleaned = re.sub(r"^```json", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = cleaned.replace("```", "").strip()
@@ -1241,7 +1170,6 @@ def extract_json_array(raw_text: str):
 
 
 def resolve_reminder_time(thoi_diem: str) -> str:
-    """Chuyển 'Sáng/Trưa/Tối' hoặc giờ cụ thể (HH:MM) thành giờ HH:MM để đặt nhắc nhở."""
     if not thoi_diem:
         return "08:00"
     text = str(thoi_diem).strip()
@@ -1262,29 +1190,11 @@ def resolve_reminder_time(thoi_diem: str) -> str:
     return "08:00"
 
 
-# Cơ sở dữ liệu tương tác thuốc lâm sàng (khai báo 1 chiều, hệ thống tự đối chiếu 2 chiều)
-# ---- MỚI: mỗi cặp tương tác có thêm trường "nguon" ghi rõ tài liệu tham khảo uy tín đã
-# đối chiếu (Dược thư Quốc gia Việt Nam, Drugs.com Interaction Checker...) để tăng độ tin cậy
-# và minh bạch nguồn gốc thông tin. Khuyến nghị: trước khi triển khai thực tế, nhóm thực hiện
-# nên phối hợp dược sĩ rà soát lại toàn bộ dữ liệu, đối chiếu trực tiếp với ấn bản mới nhất của
-# Dược thư Quốc gia Việt Nam và cơ sở dữ liệu Drugs.com/Lexicomp trước khi dùng cho mục đích lâm sàng.
-#
-# LƯU Ý VỀ ĐA NGÔN NGỮ: mỗi cặp tương tác nay có thêm bản dịch tiếng Anh y khoa
-# (các trường "*_en") do đội ngũ tự soạn dựa trên đúng nội dung tiếng Việt gốc, không dùng dịch
-# máy tự động. Khi giao diện ở chế độ tiếng Anh, hàm loc_field() bên dưới sẽ ưu tiên lấy bản
-# "*_en"; nếu thiếu sẽ tự rơi về bản tiếng Việt để không bao giờ hiển thị trống. Khuyến nghị:
-# trước khi dùng cho mục đích lâm sàng thực tế, nên nhờ dược sĩ song ngữ rà soát lại các bản
-# dịch này.
 DEFAULT_SOURCE_NOTE = "Dược thư Quốc gia Việt Nam; Drugs.com Interaction Checker"
 DEFAULT_SOURCE_NOTE_EN = "Vietnamese National Pharmacopoeia (Dược thư Quốc gia Việt Nam); Drugs.com Interaction Checker"
 
 
 def loc_field(entry: dict, field: str) -> str:
-    """
-    Trả về giá trị đã bản địa hóa của một trường dữ liệu y khoa (severity/effect/item/nguon).
-    Ưu tiên bản "{field}_en" khi ngôn ngữ hiện tại là 'en' và bản dịch đã tồn tại; nếu không,
-    luôn rơi về bản tiếng Việt gốc để tránh hiển thị rỗng.
-    """
     lang = st.session_state.get("language", "vi")
     if lang == "en":
         en_val = entry.get(f"{field}_en")
@@ -1349,26 +1259,28 @@ INTERACTION_DATABASE = {
                     "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Clopidogrel Interactions)"},
 }
 
-# ---- MỚI: độ nguy hiểm khi BỎ LIỀU (khác với độ nguy hiểm khi TƯƠNG TÁC 2 thuốc) ----
-# Dùng để quyết định có escalate cho người thân khi người dùng bấm "❌ Bỏ lỡ" liên tiếp hay không.
 MISSED_DOSE_SEVERITY = {
     "Warfarin": "Nghiêm trọng", "Digoxin": "Nghiêm trọng", "Metformin": "Nghiêm trọng",
     "Aspirin": "Cao", "Simvastatin": "Cao", "Ibuprofen": "Cao",
     "Losartan": "Trung bình", "Clopidogrel": "Trung bình", "Paracetamol": "Trung bình",
 }
-DEFAULT_MISSED_DOSE_SEVERITY = "Trung bình"  # mặc định an toàn: vẫn escalate nếu bỏ lỡ nhiều lần
+DEFAULT_MISSED_DOSE_SEVERITY = "Trung bình"
 
 
 def get_missed_dose_severity(drug_name: str) -> str:
     return MISSED_DOSE_SEVERITY.get(drug_name.strip().capitalize(), DEFAULT_MISSED_DOSE_SEVERITY)
+
+
 _SEVERITY_DISPLAY_EN = {"Cao": "High", "Nghiêm trọng": "Severe", "Trung bình": "Moderate"}
+
+
 def localize_severity(severity_vi: str) -> str:
-    """Dịch mức độ nghiêm trọng (Cao/Nghiêm trọng/Trung bình) sang tiếng Anh nếu đang ở chế độ English."""
     if st.session_state.get("language", "vi") == "en":
         return _SEVERITY_DISPLAY_EN.get(severity_vi, severity_vi)
     return severity_vi
+
+
 def build_symmetric_lookup(db: dict) -> dict:
-    """Đảm bảo tra cứu được cả 2 chiều A→B và B→A dù dữ liệu chỉ khai báo 1 chiều."""
     lookup = {k: dict(v) for k, v in db.items()}
     for drug, info in db.items():
         for other in info["conflict"]:
@@ -1408,7 +1320,7 @@ def scan_cabinet_for_conflicts(med_data: list) -> list:
 
 
 # =====================================================================================
-# 3A2. MỚI: TƯƠNG TÁC THUỐC – THỰC PHẨM / THẢO DƯỢC KIỂU VIỆT NAM
+# 3A2. TƯƠNG TÁC THUỐC – THỰC PHẨM / THẢO DƯỢC KIỂU VIỆT NAM
 # =====================================================================================
 VN_FOOD_HERB_DATABASE = {
     "Paracetamol": [
@@ -1486,7 +1398,6 @@ VN_FOOD_HERB_DATABASE = {
 
 
 def check_food_herb_conflicts(med_data: list) -> list:
-    """Đối chiếu từng thuốc trong tủ thuốc với danh sách thực phẩm/thảo dược VN cần tránh phối hợp."""
     results = []
     for m in med_data:
         name = m.get("Tên thuốc", "").strip().capitalize()
@@ -1497,24 +1408,17 @@ def check_food_herb_conflicts(med_data: list) -> list:
 
 
 def _strip_accents(text: str) -> str:
-    """Bỏ dấu tiếng Việt để so khớp linh hoạt (VD: 'rượu' ~ 'ruou')."""
     normalized = unicodedata.normalize("NFD", text)
     without_marks = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
     return without_marks.replace("đ", "d").replace("Đ", "D")
 
 
 def _fuzzy_food_item_match(user_input: str, item_field: str) -> bool:
-    """
-    So khớp linh hoạt giữa nội dung người dùng gõ (VD: "rượu", "bưởi") và trường "item"
-    trong VN_FOOD_HERB_DATABASE (VD: "Rượu bia", "Nước ép bưởi / bưởi") — không phân biệt
-    hoa/thường, không phân biệt dấu, và tách theo từng cụm ngăn cách bởi "/" hoặc ",".
-    """
     if not user_input or not user_input.strip():
         return False
     ui = _strip_accents(user_input).strip().lower()
     for part in re.split(r"[/,]", item_field):
         p = _strip_accents(part).strip().lower()
-        # Bỏ phần chú thích trong ngoặc để so khớp gọn hơn, VD: "Thuốc nam (đương quy...)"
         p_main = re.sub(r"\(.*?\)", "", p).strip()
         if not p_main:
             continue
@@ -1524,13 +1428,6 @@ def _fuzzy_food_item_match(user_input: str, item_field: str) -> bool:
 
 
 def check_food_herb_pair(input_a: str, input_b: str) -> list:
-    """
-    MỚI — Dùng cho công cụ tra cứu thủ công (tab "Tra cứu tương tác"): người dùng có thể gõ
-    một thuốc và MỘT THỰC PHẨM/THẢO DƯỢC (VD: Aspirin + rượu) chứ không chỉ hai tên thuốc.
-    check_interaction() chỉ tra trong INTERACTION_DATABASE (thuốc–thuốc) nên trước đây bỏ sót
-    hoàn toàn các cặp thuốc–thực phẩm dù VN_FOOD_HERB_DATABASE đã có sẵn dữ liệu. Hàm này đối
-    chiếu CẢ HAI CHIỀU nhập liệu với VN_FOOD_HERB_DATABASE để không bỏ sót cảnh báo.
-    """
     results = []
     a_clean, b_clean = input_a.strip(), input_b.strip()
     a_key, b_key = a_clean.capitalize(), b_clean.capitalize()
@@ -1559,9 +1456,6 @@ FAMILY_TABLE_MISSING_MSG = (
 
 
 def _is_missing_table_error(err) -> bool:
-    """
-    SỬA LỖI — nhận diện lỗi thiếu bảng qua nhiều dấu hiệu phổ biến của PostgREST/PostgreSQL.
-    """
     text = str(err).lower()
     signals = (
         "relation", "does not exist", "could not find the table",
@@ -1571,7 +1465,6 @@ def _is_missing_table_error(err) -> bool:
 
 
 def create_family_invite(owner_phone: str, member_phone: str, member_name: str = "") -> tuple:
-    """Chủ tủ thuốc (owner) mời một số điện thoại người thân (member) theo dõi/nhắc nhở mình."""
     try:
         supabase.table(FAMILY_LINKS_TABLE).insert({
             "owner_phone": owner_phone,
@@ -1585,7 +1478,6 @@ def create_family_invite(owner_phone: str, member_phone: str, member_name: str =
 
 
 def fetch_family_members(owner_phone: str) -> list:
-    """Danh sách người thân đã liên kết (mọi trạng thái) với owner_phone."""
     try:
         res = supabase.table(FAMILY_LINKS_TABLE).select("*").eq("owner_phone", owner_phone).execute()
         return res.data or []
@@ -1594,7 +1486,6 @@ def fetch_family_members(owner_phone: str) -> list:
 
 
 def fetch_pending_invites_for_member(member_phone: str) -> list:
-    """Lời mời đang chờ chính người dùng (với vai trò người thân) phê duyệt."""
     try:
         res = (supabase.table(FAMILY_LINKS_TABLE).select("*")
                .eq("member_phone", member_phone).eq("status", "pending").execute())
@@ -1604,7 +1495,6 @@ def fetch_pending_invites_for_member(member_phone: str) -> list:
 
 
 def fetch_owners_i_help(member_phone: str) -> list:
-    """Danh sách chủ tủ thuốc mà người dùng hiện tại (với vai trò người thân) đã được chấp nhận theo dõi."""
     try:
         res = (supabase.table(FAMILY_LINKS_TABLE).select("*")
                .eq("member_phone", member_phone).eq("status", "accepted").execute())
@@ -1631,7 +1521,6 @@ def delete_family_link(link_id) -> tuple:
 
 def send_family_reminder(owner_phone: str, sender_phone: str, sender_name: str,
                           message: str, target_time: str = None) -> tuple:
-    """Người thân gửi một nhắc nhở đến owner_phone (gửi ngay nếu target_time=None)."""
     try:
         supabase.table(FAMILY_REMINDERS_TABLE).insert({
             "owner_phone": owner_phone,
@@ -1647,9 +1536,6 @@ def send_family_reminder(owner_phone: str, sender_phone: str, sender_name: str,
 
 
 def fetch_due_family_reminders(owner_phone: str) -> list:
-    """
-    Lấy các nhắc nhở của người thân dành cho owner_phone mà CHƯA hiển thị, và đã đến hạn.
-    """
     try:
         res = (supabase.table(FAMILY_REMINDERS_TABLE).select("*")
                .eq("owner_phone", owner_phone).eq("delivered", False).execute())
@@ -1673,10 +1559,6 @@ def mark_family_reminder_delivered(reminder_id) -> None:
 
 
 def send_escalation_alert_to_family(owner_phone: str, owner_name: str, drug_name: str, miss_count: int) -> list:
-    """
-    MỚI — Cảnh báo leo thang tự động: khi người dùng bỏ lỡ liên tiếp một thuốc mức độ
-    nghiêm trọng, tự động gửi cảnh báo tới TẤT CẢ người thân đã 'accepted' của owner_phone.
-    """
     members = fetch_family_members(owner_phone)
     accepted = [m for m in members if m.get("status") == "accepted"]
     sent_to = []
@@ -1696,16 +1578,15 @@ def send_escalation_alert_to_family(owner_phone: str, owner_name: str, drug_name
         if ok:
             sent_to.append(member_phone)
     return sent_to
-DOSE_EVENTS_TABLE = "safepill_dose_events"
 
 
 def log_dose_event(owner_phone: str, drug_name: str, scheduled_time: str, taken: bool) -> None:
-    st.write(f"🔍 [DEBUG] Đang gọi log_dose_event: owner={owner_phone}, drug={drug_name}, taken={taken}")
     """
-    MỚI — Ghi 1 dòng "sự kiện uống thuốc" vào bảng safepill_dose_events mỗi khi người dùng
+    Ghi 1 dòng "sự kiện uống thuốc" vào bảng safepill_dose_events mỗi khi người dùng
     tick "Đã uống" hoặc bấm "❌ Bỏ lỡ". Đây là dữ liệu thô dùng để sau này huấn luyện model
-    dự đoán nguy cơ bỏ liều (xem train_dose_risk_model.py). Lỗi ở đây KHÔNG được làm gián đoạn
-    trải nghiệm chính của người dùng, nên chỉ log cảnh báo nhẹ, không raise exception.
+    dự đoán nguy cơ bỏ liều. Lỗi ở đây KHÔNG được làm gián đoạn trải nghiệm chính của
+    người dùng, nên chỉ log cảnh báo nhẹ ra console, không raise exception và không hiện
+    lên giao diện.
     """
     try:
         today = datetime.now().date()
@@ -1717,13 +1598,11 @@ def log_dose_event(owner_phone: str, drug_name: str, scheduled_time: str, taken:
             "day_of_week": today.weekday(),
             "taken": taken,
         }).execute()
-        st.toast(f"✅ [DEBUG] Đã ghi log: {drug_name} - taken={taken}", icon="✅")
     except Exception as e:
-        st.error(f"❌ [DEBUG] Lỗi ghi log_dose_event: {e}")
         print(f"[log_dose_event] Không ghi được sự kiện uống thuốc: {e}")
 
+
 def record_missed_dose(drug_name: str, severity: str) -> int:
-    """Tăng bộ đếm bỏ lỡ liên tiếp cho một thuốc; trả về số lần bỏ lỡ liên tiếp hiện tại."""
     st.session_state.missed_streak[drug_name] = st.session_state.missed_streak.get(drug_name, 0) + 1
     return st.session_state.missed_streak[drug_name]
 
@@ -1736,19 +1615,10 @@ AUTO_ESCALATION_MINUTES = 30
 
 
 def build_adherence_task_key(drug_name: str, hhmm: str, med_obj) -> str:
-    """
-    Sinh key nhắc nhở DUY NHẤT và NHẤT QUÁN cho một task (thuốc + giờ hẹn).
-    """
     return f"task_{drug_name}_{hhmm}_{id(med_obj)}"
 
 
 def check_and_auto_escalate_overdue_doses(med_data_valid: list) -> list:
-    """
-    Rà soát các thuốc trong lịch hôm nay: nếu đã quá AUTO_ESCALATION_MINUTES phút kể từ giờ hẹn
-    mà vẫn CHƯA được đánh dấu 'Đã uống', tự động gửi cảnh báo tới toàn bộ người thân đã 'accepted'
-    (nếu có) VÀ luôn trả về mục đó để hiển thị cảnh báo cho chính người dùng trên UI — không phụ
-    thuộc vào việc có người thân hay gửi thành công hay không.
-    """
     now = datetime.now()
     newly_escalated = []
     for med in med_data_valid:
@@ -1773,17 +1643,14 @@ def check_and_auto_escalate_overdue_doses(med_data_valid: list) -> list:
                 1,
             )
             st.session_state.auto_escalated_keys.add(key_name)
-            # LUÔN thêm vào danh sách hiển thị cho người dùng, kể cả khi chưa có người thân
             newly_escalated.append({"drug": drug_name, "time": hhmm, "sent_to": len(sent_to)})
     return newly_escalated
-   
 
 
 LOW_STOCK_THRESHOLD = 5
 
 
 def decrement_med_quantity(med_idx: int, task_key: str) -> None:
-    """Trừ 1 đơn vị khỏi 'Số lượng còn lại' của thuốc khi được đánh dấu 'Đã uống'."""
     already = st.session_state.qty_decremented.get(task_key, False)
     if already:
         return
@@ -1799,7 +1666,6 @@ def decrement_med_quantity(med_idx: int, task_key: str) -> None:
 
 
 def restore_med_quantity(med_idx: int, task_key: str) -> None:
-    """Hoàn tác trừ số lượng nếu người dùng bỏ tick 'Đã uống'."""
     if not st.session_state.qty_decremented.get(task_key, False):
         return
     med = st.session_state.med_data[med_idx]
@@ -1814,7 +1680,6 @@ def restore_med_quantity(med_idx: int, task_key: str) -> None:
 
 
 def log_adherence_snapshot(owner_phone: str, total_tasks: int, done_tasks: int) -> tuple:
-    """Ghi/cập nhật (upsert) tỷ lệ tuân thủ của HÔM NAY vào Supabase để dựng biểu đồ theo thời gian."""
     if total_tasks == 0:
         return True, None
     rate = round((done_tasks / total_tasks) * 100, 1)
@@ -1849,9 +1714,40 @@ ADHERENCE_HISTORY_MISSING_MSG = (
     "ADHERENCE_HISTORY_TABLE trong code) rồi tải lại trang."
 )
 
+# ---- Phát hiện bất thường trong tuân thủ điều trị ----
+ANOMALY_DROP_THRESHOLD = 25  # % — tụt quá ngưỡng này so với trung bình 7 ngày thì cảnh báo
+ANOMALY_MIN_HISTORY_DAYS = 3  # cần ít nhất N ngày dữ liệu mới đủ tin cậy để so sánh
+
+
+def detect_adherence_anomaly(history_rows: list):
+    """
+    So tỷ lệ tuân thủ NGÀY GẦN NHẤT với trung bình trượt của các ngày trước đó.
+    Trả về dict cảnh báo nếu phát hiện tụt bất thường, hoặc None nếu bình thường
+    hoặc chưa đủ dữ liệu lịch sử để so sánh.
+    """
+    if len(history_rows) < ANOMALY_MIN_HISTORY_DAYS + 1:
+        return None
+
+    sorted_rows = sorted(history_rows, key=lambda r: r["log_date"])
+    latest = sorted_rows[-1]
+    previous = sorted_rows[:-1]
+
+    prev_rates = [float(r.get("rate", 0)) for r in previous[-7:]]
+    avg_prev = sum(prev_rates) / len(prev_rates)
+    latest_rate = float(latest.get("rate", 0))
+
+    drop = avg_prev - latest_rate
+    if drop >= ANOMALY_DROP_THRESHOLD:
+        return {
+            "latest_rate": latest_rate,
+            "avg_prev": round(avg_prev, 1),
+            "drop": round(drop, 1),
+            "date": latest["log_date"],
+        }
+    return None
+
 
 def build_emergency_qr_text(profile: dict, med_data: list, conflicts: list, family_members: list) -> str:
-    """Dựng nội dung văn bản gọn gàng để mã hoá vào QR khẩn cấp."""
     lines = [
         "=== SAFEPILL - THE KHAN CAP ===",
         f"Ho ten: {profile.get('full_name', 'N/A')}",
@@ -1877,7 +1773,6 @@ def build_emergency_qr_text(profile: dict, med_data: list, conflicts: list, fami
 
 
 def generate_qr_image(text: str):
-    """Trả về ảnh PIL của mã QR chứa `text`, hoặc None nếu thư viện qrcode chưa được cài."""
     if not QRCODE_AVAILABLE:
         return None
 
@@ -1930,10 +1825,6 @@ def _load_font(size: int, bold: bool = False):
 
 
 def generate_lockscreen_wallpaper(qr_img, profile: dict, conflicts: list, size_key: str = "iPhone (1170 x 2532)"):
-    """
-    Ghép mã QR khẩn cấp vào một ảnh nền dọc kèm dòng chữ cảnh báo lớn, để đặt làm hình nền
-    màn hình khoá.
-    """
     from PIL import Image as PILImage, ImageDraw
 
     width, height = WALLPAPER_SIZES.get(size_key, (1170, 2532))
@@ -2015,7 +1906,6 @@ SHAPE_ICON_MAP = {
 
 
 def render_pill_icon_html(color: str, shape: str, size: int = 26) -> str:
-    """Trả về đoạn HTML nhỏ vẽ hình viên thuốc (màu + hình dạng) để người già dễ nhận diện qua hình ảnh."""
     color_clean = (color or "#cccccc").strip()
     shape_key = (shape or "").strip().lower()
     shape_style = "border-radius:50%;"
@@ -2031,7 +1921,6 @@ def render_pill_icon_html(color: str, shape: str, size: int = 26) -> str:
 
 
 def build_tts_button_html(text: str, button_label: str = "🔊", key_suffix: str = "") -> str:
-    """Trả về HTML nút bấm phát âm thanh đọc to `text` bằng giọng của trình duyệt, theo ngôn ngữ hiện tại."""
     safe_text = json.dumps(text, ensure_ascii=False)
     btn_id = f"ttsBtn_{key_suffix}".replace(" ", "_")
     lang = st.session_state.get("language", "vi")
@@ -2075,7 +1964,6 @@ DEFAULT_STATE = {
     "adherence_logged_today": False,
     "auto_escalated_keys": lambda: set(),
     "adherence_log_date": None,
-    # ---- MỚI: ngôn ngữ hiển thị hiện tại của phiên làm việc ('vi' hoặc 'en') ----
     "language": "vi",
 }
 for key, default_val in DEFAULT_STATE.items():
@@ -2084,9 +1972,6 @@ for key, default_val in DEFAULT_STATE.items():
 
 
 def reset_daily_adherence_state_if_needed() -> None:
-    """
-    Nếu sang ngày mới, tự động làm mới các bộ đếm tuân thủ để phản ánh đúng ngày hiện tại.
-    """
     today_str = datetime.now().strftime("%Y-%m-%d")
     if st.session_state.adherence_log_date != today_str:
         st.session_state.adherence_logs = {}
@@ -2101,7 +1986,6 @@ def load_profile_into_session(user_row: dict):
     st.session_state.logged_in = True
     st.session_state.user_phone = user_row.get("phone")
     st.session_state.current_profile = user_row
-    # ---- MỚI: áp dụng lại ngôn ngữ đã lưu của người dùng khi đăng nhập ----
     saved_lang = user_row.get("language")
     st.session_state.language = saved_lang if saved_lang in LANGUAGE_OPTIONS else "vi"
     diag = user_row.get("diagnostic")
@@ -2113,7 +1997,6 @@ def load_profile_into_session(user_row: dict):
 
 
 def save_med_data_to_supabase() -> None:
-    """Ghi toàn bộ tủ thuốc hiện tại xuống cột 'diagnostic' của Supabase dưới dạng chuỗi JSON."""
     if not st.session_state.get("user_phone"):
         return
     try:
@@ -2126,7 +2009,6 @@ def save_med_data_to_supabase() -> None:
 
 
 def build_reminder_sound_script(sound_type: str, volume: float) -> str:
-    """Trả về đoạn JS dùng chung để phát âm thanh nhắc nhở bằng Web Audio API."""
     return f"""
     function playReminderSound(type, volume) {{
         try {{
@@ -2230,29 +2112,25 @@ elif not st.session_state.logged_in:
                 if face_img:
                     with st.spinner(tr("face_login_matching")):
                         try:
-                            login_embedding = get_face_embedding(face_img.getvalue())
-                            if login_embedding is None:
+                            login_hash = average_hash(face_img.getvalue())
+                            if not login_hash:
                                 st.error(tr("face_login_bad_image"))
                             else:
                                 try:
-                                    res = supabase.table(TABLE).select("phone, full_name, pin, face_embedding").execute()
+                                    res = supabase.table(TABLE).select("phone, full_name, pin, face_hash").execute()
                                 except Exception as col_err:
                                     st.error(tr("face_login_missing_col"))
                                     res = None
                                 if res is not None:
-                                    candidates = [row for row in (res.data or []) if row.get("face_embedding")]
-                                    best_match, best_distance = None, 999.0
+                                    candidates = [row for row in (res.data or []) if row.get("face_hash")]
+                                    best_match, best_distance = None, 999
                                     for row in candidates:
-                                        try:
-                                            stored_embedding = json.loads(row["face_embedding"])
-                                        except Exception:
-                                            continue
-                                        dist = face_distance(login_embedding, stored_embedding)
+                                        dist = hamming_distance(login_hash, row["face_hash"])
                                         if dist < best_distance:
                                             best_distance, best_match = dist, row
                                     if not candidates:
                                         st.warning(tr("face_login_no_accounts"))
-                                    elif best_match and best_distance <= FACE_DISTANCE_THRESHOLD:
+                                    elif best_match and best_distance <= FACE_MATCH_THRESHOLD:
                                         full_res = supabase.table(TABLE).select("*").eq(
                                             "phone", best_match["phone"]
                                         ).execute()
@@ -2283,9 +2161,6 @@ elif not st.session_state.logged_in:
                 r_blood_type = st.selectbox(
                     tr("blood_type_label"), BLOOD_TYPE_OPTIONS, help=tr("blood_type_help"),
                 )
-                # ---- MỚI: chọn ngôn ngữ hiển thị ngay khi đăng ký — mặc định theo lựa chọn
-                # người dùng đã chọn ở bộ chuyển ngôn ngữ phía trên (render_language_switcher),
-                # để không bị "nhảy" ngược lại tiếng Việt nếu họ đã chọn English từ trước. ----
                 r_language = st.selectbox(
                     tr("language_label"), options=list(LANGUAGE_OPTIONS.keys()),
                     format_func=lambda k: LANGUAGE_OPTIONS[k],
@@ -2321,23 +2196,23 @@ elif not st.session_state.logged_in:
                                     "blood_type": r_blood_type,
                                     "language": r_language,
                                 }
-                                face_embedding = None
+                                face_hash = None
                                 if enable_face and reg_face_img is not None:
                                     face_bytes = reg_face_img.getvalue()
-                                    face_embedding = get_face_embedding(face_bytes)
-                                    if face_embedding is None:
+                                    face_hash = average_hash(face_bytes)
+                                    if not face_hash:
                                         st.warning(tr("register_warning_face_fail"))
                                     else:
                                         new_row["face_data"] = base64.b64encode(face_bytes).decode("utf-8")
-                                        new_row["face_embedding"] = json.dumps(face_embedding.tolist())
+                                        new_row["face_hash"] = face_hash
                                 try:
                                     resp = supabase.table(TABLE).insert(new_row).execute()
                                 except Exception as insert_err:
                                     err_text = str(insert_err)
                                     missing_cols = []
-                                    if face_embedding is not None and ("face_data" in err_text or "face_embedding" in err_text
+                                    if face_hash and ("face_data" in err_text or "face_hash" in err_text
                                                        or "column" in err_text.lower()):
-                                        missing_cols += ["face_data", "face_embedding"]
+                                        missing_cols += ["face_data", "face_hash"]
                                     if "blood_type" in err_text or "column" in err_text.lower():
                                         missing_cols.append("blood_type")
                                     if "language" in err_text or "column" in err_text.lower():
@@ -2351,9 +2226,6 @@ elif not st.session_state.logged_in:
                                         raise
                                 if resp.data:
                                     load_profile_into_session(resp.data[0])
-                                    # Đảm bảo giao diện đổi ngôn ngữ NGAY LẬP TỨC sau khi đăng ký, kể cả
-                                    # khi cột 'language' chưa tồn tại trên Supabase (insert phía trên đã
-                                    # tự bỏ cột đó) — vẫn áp dụng lựa chọn của người dùng trong phiên này.
                                     st.session_state.language = r_language
                                     st.session_state.med_data = []
                                     st.success(tr("register_success"))
@@ -2404,7 +2276,6 @@ else:
             st.session_state.onboarded = True
             st.rerun()
 
-    # ---- CSS cố định để thanh tab luôn hiện đủ icon + chữ, không bị cắt mất chữ ----
     st.markdown(
         """
         <style>
@@ -2428,9 +2299,6 @@ else:
     )
 
     if st.session_state.elderly_mode:
-        # Lưu ý: KHÔNG áp font-size lớn lên nút tab (button trong [data-baseweb="tab"]),
-        # vì 8 tab không đủ chỗ hiển thị chữ ở cỡ 22px trên màn hình nhỏ -> chữ bị ẩn,
-        # chỉ còn icon. Nút "Taken/Missed" v.v. bên trong nội dung vẫn được phóng to bình thường.
         st.markdown(
             "<style> p,span,label,h3,h2,input,li {font-size:22px !important;} "
             "button:not([data-baseweb='tab']) {font-size:22px !important;} "
@@ -2463,9 +2331,6 @@ else:
     with tab_home:
         st.header(tr("home_header"))
 
-        # ---- MỚI: nút kích hoạt thông báo + âm thanh, PHẢI gắn trực tiếp vào 1 lần bấm
-        # của người dùng để hoạt động trên mobile. KHÔNG tự động gọi requestPermission(),
-        # vì trình duyệt mobile sẽ âm thầm từ chối nếu không có user gesture trực tiếp. ----
         _sound_js_fn_top = build_reminder_sound_script(
             st.session_state.reminder_sound, st.session_state.reminder_volume
         )
@@ -2498,9 +2363,6 @@ else:
         """
         components.html(_enable_notif_html, height=90)
 
-        # ---- Banner nổi bật "Add to Home Screen" cho iPhone/iPad, chỉ tự hiện khi thiết bị
-        # thực sự là iOS Safari và CHƯA chạy ở chế độ standalone (đã cài vào MH chính).
-        # Việc hiện/ẩn xử lý hoàn toàn ở phía client (JS), không cần round-trip Streamlit. ----
         _ios_title_js = json.dumps(tr("notif_ios_add_home_title"), ensure_ascii=False)
         _ios_step1_js = json.dumps(tr("notif_ios_add_home_step1"), ensure_ascii=False)
         _ios_step2_js = json.dumps(tr("notif_ios_add_home_step2"), ensure_ascii=False)
@@ -2519,7 +2381,6 @@ else:
         (function() {{
             var ua = navigator.userAgent || navigator.vendor || window.opera;
             var isIOS = /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
-            // Một số iPadOS mới báo UA giống macOS nhưng có touch -> kiểm tra thêm
             var isIPadOS13Up = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
             var isStandalone = window.navigator.standalone === true ||
                 window.matchMedia('(display-mode: standalone)').matches;
@@ -2548,7 +2409,7 @@ else:
                 else:
                     st.error(tr("home_auto_escalate_msg_no_family", mins=AUTO_ESCALATION_MINUTES,
                                  time=item['time'], drug=item['drug']))
-                
+
         with st.expander(tr("home_custom_expander"), expanded=False):
             st.caption(tr("home_custom_caption"))
             with st.form("add_custom_reminder_form", clear_on_submit=True):
@@ -2637,7 +2498,6 @@ else:
                                 ), height=42,
                             )
                     if checked != taken:
-                        st.write(f"🔍 [DEBUG] Đã vào nhánh checked!=taken. checked={checked}, taken={taken}")
                         st.session_state.adherence_logs[key_name] = checked
                         if checked:
                             reset_missed_dose(med.get("Tên thuốc", ""))
@@ -2652,7 +2512,6 @@ else:
                         save_med_data_to_supabase()
                         st.rerun()
                     if missed_clicked:
-                        st.write(f"🔍 [DEBUG] Đã vào nhánh missed_clicked. drug_name={med.get('Tên thuốc', '')}")
                         st.session_state.adherence_logs[key_name] = False
                         drug_name = med.get("Tên thuốc", "")
                         severity = get_missed_dose_severity(drug_name)
@@ -3014,7 +2873,17 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
             with st.chat_message("assistant"):
                 with st.spinner(tr("expert_analyzing")):
                     try:
-                        # ---- MỚI: chỉ định rõ ngôn ngữ trả lời cho Gemini theo lựa chọn hiện tại ----
+                        drug_names_in_cabinet = list({
+                            m.get("Tên thuốc", "").strip()
+                            for m in st.session_state.med_data if m.get("Tên thuốc")
+                        })
+                        rag_context_parts = []
+                        for dn in drug_names_in_cabinet[:5]:
+                            info = fetch_openfda_drug_info(dn)
+                            if info:
+                                rag_context_parts.append(info)
+                        rag_context = "\n\n".join(rag_context_parts) if rag_context_parts else "(Không tra được dữ liệu FDA cho các thuốc hiện có)"
+
                         full_prompt = f"""
 Bạn là trợ lý dược sĩ AI của ứng dụng SafePill. Luôn nhắc người dùng đây là thông tin tham khảo,
 không thay thế chỉ định của bác sĩ, và đề nghị đi khám nếu triệu chứng nghiêm trọng hoặc kéo dài.
@@ -3024,6 +2893,8 @@ Bệnh viện Bạch Mai, Bệnh viện Chợ Rẫy...) để đảm bảo thôn
 Thông tin bệnh nhân: {st.session_state.current_profile.get('full_name', tr('expert_anon_name'))}.
 Tủ thuốc hiện tại: {st.session_state.med_data}.
 Tương tác đã phát hiện: {detected_conflicts}.
+Dữ liệu tra cứu chính thức từ FDA (ưu tiên dùng làm căn cứ trả lời nếu liên quan đến câu hỏi):
+{rag_context}
 Câu hỏi: '{user_query}'.
 QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_instruction')}
 """
@@ -3060,10 +2931,11 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                         except Exception:
                             source_links = []
 
-                        if source_links:
+                        trusted_links = [(t, u) for t, u in source_links if is_trusted_medical_source(u)]
+                        if trusted_links:
                             ai_response += tr("expert_sources_title")
                             seen_uris = set()
-                            for title, uri in source_links:
+                            for title, uri in trusted_links:
                                 if uri in seen_uris:
                                     continue
                                 seen_uris.add(uri)
@@ -3142,36 +3014,6 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
             plt.close(fig)
             st.caption(tr("report_bring_to_doctor"))
 
-ANOMALY_DROP_THRESHOLD = 25  # % — tụt quá ngưỡng này so với trung bình 7 ngày thì cảnh báo
-ANOMALY_MIN_HISTORY_DAYS = 3  # cần ít nhất N ngày dữ liệu mới đủ tin cậy để so sánh
-
-
-def detect_adherence_anomaly(history_rows: list):
-    """
-    So tỷ lệ tuân thủ NGÀY GẦN NHẤT với trung bình trượt của các ngày trước đó.
-    Trả về dict cảnh báo nếu phát hiện tụt bất thường, hoặc None nếu bình thường
-    hoặc chưa đủ dữ liệu lịch sử để so sánh.
-    """
-    if len(history_rows) < ANOMALY_MIN_HISTORY_DAYS + 1:
-        return None
-
-    sorted_rows = sorted(history_rows, key=lambda r: r["log_date"])
-    latest = sorted_rows[-1]
-    previous = sorted_rows[:-1]
-
-    prev_rates = [float(r.get("rate", 0)) for r in previous[-7:]]
-    avg_prev = sum(prev_rates) / len(prev_rates)
-    latest_rate = float(latest.get("rate", 0))
-
-    drop = avg_prev - latest_rate
-    if drop >= ANOMALY_DROP_THRESHOLD:
-        return {
-            "latest_rate": latest_rate,
-            "avg_prev": round(avg_prev, 1),
-            "drop": round(drop, 1),
-            "date": latest["log_date"],
-        }
-    return None
     # ---------------- TAB THẺ QR KHẨN CẤP ----------------
     with tab_qr:
         st.header(tr("qr_header"))
@@ -3242,7 +3084,6 @@ def detect_adherence_anomaly(history_rows: list):
                     BLOOD_TYPE_OPTIONS,
                     index=BLOOD_TYPE_OPTIONS.index(current_blood) if current_blood in BLOOD_TYPE_OPTIONS else 0,
                 )
-                # ---- MỚI: đổi ngôn ngữ hiển thị trong Cài đặt ----
                 current_lang = st.session_state.get("language", "vi")
                 new_language = st.selectbox(
                     tr("acc_language"), options=list(LANGUAGE_OPTIONS.keys()),
@@ -3310,7 +3151,7 @@ def detect_adherence_anomaly(history_rows: list):
 
             st.divider()
             st.subheader(tr("acc_faceid_title"))
-            has_face = bool(st.session_state.current_profile.get("face_embedding"))
+            has_face = bool(st.session_state.current_profile.get("face_hash"))
             if has_face:
                 st.success(tr("acc_faceid_registered"))
             else:
@@ -3320,16 +3161,15 @@ def detect_adherence_anomaly(history_rows: list):
                 if new_face_img is not None and st.button(tr("acc_faceid_save_btn"), key="save_face_btn"):
                     try:
                         face_bytes = new_face_img.getvalue()
-                        new_face_embedding = get_face_embedding(face_bytes)
-                        if new_face_embedding is None:
+                        new_face_hash = average_hash(face_bytes)
+                        if not new_face_hash:
                             st.error(tr("acc_faceid_bad_image"))
                         else:
-                            embedding_json = json.dumps(new_face_embedding.tolist())
                             supabase.table(TABLE).update({
                                 "face_data": base64.b64encode(face_bytes).decode("utf-8"),
-                                "face_embedding": embedding_json,
+                                "face_hash": new_face_hash,
                             }).eq("phone", st.session_state.user_phone).execute()
-                            st.session_state.current_profile["face_embedding"] = embedding_json
+                            st.session_state.current_profile["face_hash"] = new_face_hash
                             st.success(tr("acc_faceid_saved"))
                             st.rerun()
                     except Exception as e:
@@ -3337,10 +3177,10 @@ def detect_adherence_anomaly(history_rows: list):
             if has_face:
                 if st.button(tr("acc_faceid_remove_btn"), key="remove_face_btn"):
                     try:
-                        supabase.table(TABLE).update({"face_data": None, "face_embedding": None}).eq(
+                        supabase.table(TABLE).update({"face_data": None, "face_hash": None}).eq(
                             "phone", st.session_state.user_phone
                         ).execute()
-                        st.session_state.current_profile["face_embedding"] = None
+                        st.session_state.current_profile["face_hash"] = None
                         st.success(tr("acc_faceid_removed"))
                         st.rerun()
                     except Exception as e:
