@@ -1,0 +1,15 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install pytest pandas numpy pillow
+      - run: pytest -q
+      - name: Chạy đánh giá trên dữ liệu mẫu (kiểm tra script không hỏng)
+        run: |
+          python evaluation/eval_ocr.py --gold evaluation/templates/ocr_gold_template.csv --pred evaluation/templates/ocr_pred_template.csv --out /tmp/ocr_report.md
+          python evaluation/eval_interactions.py --gold evaluation/templates/interaction_gold_template.csv --out /tmp/ia_report.md
