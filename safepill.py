@@ -1,4 +1,3 @@
-from urllib import response
 import streamlit as st
 import streamlit.components.v1 as components
 import time
@@ -9,14 +8,33 @@ import unicodedata
 import hashlib
 import json
 import io
+import face_recognition
+import numpy as np
+import pandas as pd
 import base64
-import os
 import sys
 from datetime import datetime, time as dtime, timedelta
 from supabase import create_client
 from google import genai
 from PIL import Image
 from openvino_ocr_helper import run_openvino_ocr, parse_offline_ocr_text
+from safepill_core import (
+    DEFAULT_SOURCE_NOTE,
+    SAFETY_PROMPT_RULES,
+    assess_answer_confidence,
+    check_food_herb_conflicts,
+    check_food_herb_pair,
+    check_image_quality,
+    check_interaction,
+    find_unidentified_drugs,
+    format_confidence_block,
+    interaction_coverage_note,
+    is_trusted_medical_source,
+    normalize_drug_name,
+    read_prescription_with_gemini,
+    scan_cabinet_for_conflicts,
+    validate_pending_rows,
+)
 try:
     from streamlit_autorefresh import st_autorefresh
     AUTOREFRESH_AVAILABLE = True
@@ -118,7 +136,7 @@ TRANSLATIONS = {
         "face_login_capture": "Chụp ảnh xác thực",
         "face_login_matching": "🔍 Đang đối chiếu dữ liệu sinh trắc học...",
         "face_login_bad_image": "❌ Không xử lý được ảnh vừa chụp. Vui lòng thử lại với ảnh rõ nét hơn.",
-        "face_login_missing_col": "⚠️ Bảng dữ liệu chưa có cột lưu FaceID (face_data/face_hash). "
+        "face_login_missing_col": "⚠️ Bảng dữ liệu chưa có cột lưu FaceID (face_data/face_embedding). "
                                    "Hãy chạy migration SQL để thêm cột trước khi dùng FaceID.",
         "face_login_no_accounts": "⚠️ Chưa có tài khoản nào đăng ký FaceID. "
                                    "Hãy đăng nhập bằng mã PIN, sau đó bật FaceID trong phần đăng ký.",
@@ -181,7 +199,7 @@ TRANSLATIONS = {
         "metric_interaction": "Tương tác thuốc",
         "metric_interaction_alert": "🚨 CÓ CẢNH BÁO",
         "metric_interaction_alert_delta": "Cần xem xét ngay",
-        "metric_interaction_safe": "✅ An toàn",
+        "metric_interaction_safe": "Chưa phát hiện”, phần phụ là “Chưa thấy xung đột trong dữ liệu hiện có",
         "metric_interaction_safe_delta": "Không phát hiện xung đột",
         "metric_schedule": "Lịch nhắc hôm nay",
         "metric_schedule_unit": "khung giờ",
@@ -330,10 +348,11 @@ TRANSLATIONS = {
         "matrix_recommendation_drug": "Không tự ý phối hợp, hỏi ý kiến bác sĩ/dược sĩ.",
         "matrix_recommendation_food": "Tránh phối hợp, hỏi ý kiến bác sĩ/dược sĩ nếu cần dùng chung.",
         "matrix_food_alert": "⚠️ PHÁT HIỆN TƯƠNG TÁC THUỐC–THỰC PHẨM/THẢO DƯỢC (Mức độ: {severity})",
-        "matrix_safe": "✅ Chưa ghi nhận tương tác giữa `{a}` và `{b}` trong cơ sở dữ liệu hiện tại "
-                        "(đã kiểm tra cả thuốc–thuốc và thuốc–thực phẩm/thảo dược).",
-        "matrix_footer_caption": "Lưu ý: cơ sở dữ liệu minh họa chỉ bao gồm một số hoạt chất và thực "
-                                  "phẩm/thảo dược phổ biến, không thay thế tra cứu dược thư chính thức.",
+        "matrix_safe": "⚠️ Không tìm thấy dữ liệu tương tác giữa `{a}` và `{b}` trong cơ sở dữ liệu hiện tại. "
+                "Điều này KHÔNG đồng nghĩa là an toàn: cơ sở dữ liệu chỉ có một số hoạt chất. "
+                "Hãy hỏi bác sĩ hoặc dược sĩ.",
+        "metric_interaction_safe": "Chưa phát hiện",
+        "metric_interaction_safe_delta": "Chưa thấy xung đột trong dữ liệu hiện có",
 
 
         # ---- Tab Hỏi đáp AI ----
@@ -445,7 +464,7 @@ TRANSLATIONS = {
         "acc_faceid_bad_image": "❌ Không xử lý được ảnh, vui lòng thử lại.",
         "acc_faceid_saved": "✅ Đã lưu FaceID mới.",
         "acc_faceid_save_error": "❌ Không thể lưu FaceID (kiểm tra đã chạy migration thêm cột "
-                                  "face_data/face_hash chưa):",
+                                  "face_data/face_embedding chưa):",
         "acc_faceid_remove_btn": "🗑️ Xoá FaceID",
         "acc_faceid_removed": "✅ Đã xoá FaceID khỏi tài khoản.",
         "acc_faceid_remove_error": "Lỗi xoá FaceID:",
@@ -568,7 +587,7 @@ TRANSLATIONS = {
         "face_login_capture": "Take a photo to verify",
         "face_login_matching": "🔍 Matching biometric data...",
         "face_login_bad_image": "❌ Could not process the photo. Please try again with a clearer image.",
-        "face_login_missing_col": "⚠️ The database is missing the FaceID columns (face_data/face_hash). "
+        "face_login_missing_col": "⚠️ The database is missing the FaceID columns (face_data/face_embedding). "
                                    "Please run the SQL migration to add these columns before using FaceID.",
         "face_login_no_accounts": "⚠️ No accounts have registered FaceID yet. "
                                    "Please sign in with your PIN, then enable FaceID during registration.",
@@ -627,7 +646,7 @@ TRANSLATIONS = {
         "metric_interaction": "Drug interactions",
         "metric_interaction_alert": "🚨 WARNING",
         "metric_interaction_alert_delta": "Needs review now",
-        "metric_interaction_safe": "✅ Safe",
+        "metric_interaction_safe": "“Not detected”; the subtitle is “No conflicts found in current data”",
         "metric_interaction_safe_delta": "No conflicts detected",
         "metric_schedule": "Today's schedule",
         "metric_schedule_unit": "time slot(s)",
@@ -768,10 +787,11 @@ TRANSLATIONS = {
         "matrix_recommendation_drug": "Do not combine on your own — consult a doctor or pharmacist.",
         "matrix_recommendation_food": "Avoid combining — consult a doctor or pharmacist if needed together.",
         "matrix_food_alert": "⚠️ DRUG–FOOD/HERBAL INTERACTION DETECTED (Severity: {severity})",
-        "matrix_safe": "✅ No interaction found between `{a}` and `{b}` in the current database (both "
-                        "drug–drug and drug–food/herbal interactions were checked).",
-        "matrix_footer_caption": "Note: this illustrative database only covers some common active "
-                                  "ingredients and foods/herbs, and does not replace an official pharmacopeia lookup.",
+        "matrix_safe": "⚠️ No interaction data found between `{a}` and `{b}` in the current database. "
+                "This does NOT mean they are safe: the database only covers some drugs. "
+                "Please ask a doctor or pharmacist.",
+        "metric_interaction_safe": "None detected",
+        "metric_interaction_safe_delta": "No conflicts in current data",
         "expert_header": "🤖 Medication & health Q&A assistant",
         "expert_grounding_caption": "🔎 The assistant is instructed to prioritize reputable sources "
                                      "(Drugs.com, national pharmacopeias, MedlinePlus, major hospitals...) "
@@ -873,7 +893,7 @@ TRANSLATIONS = {
         "acc_faceid_save_btn": "Save FaceID",
         "acc_faceid_bad_image": "❌ Could not process the image, please try again.",
         "acc_faceid_saved": "✅ New FaceID saved.",
-        "acc_faceid_save_error": "❌ Could not save FaceID (check whether the face_data/face_hash "
+        "acc_faceid_save_error": "❌ Could not save FaceID (check whether the face_data/face_embedding "
                                   "migration has been run):",
         "acc_faceid_remove_btn": "🗑️ Remove FaceID",
         "acc_faceid_removed": "✅ FaceID removed from this account.",
@@ -1085,10 +1105,6 @@ def phone_already_registered(phone: str) -> bool:
         return False
 
 
-TRUSTED_MEDICAL_DOMAINS = (
-    "drugs.com", "medlineplus.gov", "nih.gov", "fda.gov", "who.int",
-    "mayoclinic.org", "cdc.gov", "rxlist.com", "webmd.com",
-)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1126,47 +1142,117 @@ def fetch_openfda_drug_info(drug_name: str) -> str:
         return ""
 
 
-def is_trusted_medical_source(uri: str) -> bool:
-    return any(domain in uri.lower() for domain in TRUSTED_MEDICAL_DOMAINS)
 
 
 BLOOD_TYPE_OPTIONS = ["Chưa rõ", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
 
-FACE_MATCH_THRESHOLD = 10  # ngưỡng khoảng cách Hamming; càng thấp càng nghiêm ngặt
+FACE_DISTANCE_THRESHOLD = 0.55  # cần tự kiểm thử; càng thấp càng nghiêm ngặt
 
 
-def average_hash(image_bytes: bytes, hash_size: int = 8) -> str:
+def get_face_embedding(image_bytes: bytes):
     """
-    Perceptual hash (aHash) đơn giản dùng để đối chiếu ảnh khuôn mặt ở mức demo.
-    Đây KHÔNG phải nhận diện khuôn mặt sinh trắc học thật sự (không dùng embedding
-    khuôn mặt chuyên dụng như FaceNet/Dlib) — phù hợp cho mục đích minh họa/khoa học
-    kỹ thuật, và cần nâng cấp lên thư viện nhận diện khuôn mặt chuyên dụng (face_recognition)
-    khi hạ tầng deploy đủ tài nguyên để biên dịch dlib.
+    Trả về vector đặc trưng khuôn mặt (128 chiều) từ ảnh, hoặc None nếu không phát hiện
+    được khuôn mặt nào.
     """
     try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("L").resize((hash_size, hash_size))
-        pixels = list(img.getdata())
-        avg = sum(pixels) / len(pixels)
-        return "".join("1" if p > avg else "0" for p in pixels)
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_array = np.array(img)
+        face_locations = face_recognition.face_locations(img_array)
+        if not face_locations:
+            return None
+        encodings = face_recognition.face_encodings(img_array, known_face_locations=face_locations)
+        return encodings[0] if encodings else None
     except Exception as e:
-        print(f"[average_hash] Lỗi xử lý ảnh khuôn mặt: {e}")
-        return ""
+        print(f"[get_face_embedding] Lỗi xử lý ảnh khuôn mặt: {e}")
+        return None
 
 
-def hamming_distance(hash1: str, hash2: str) -> int:
-    if not hash1 or not hash2 or len(hash1) != len(hash2):
-        return 999
-    return sum(c1 != c2 for c1, c2 in zip(hash1, hash2))
+def face_distance(embedding_a, embedding_b) -> float:
+    return float(np.linalg.norm(np.array(embedding_a) - np.array(embedding_b)))
 
 
-def extract_json_array(raw_text: str):
-    cleaned = raw_text.strip()
-    cleaned = re.sub(r"^```json", "", cleaned, flags=re.IGNORECASE).strip()
-    cleaned = cleaned.replace("```", "").strip()
-    match = re.search(r"\[.*\]", cleaned, re.DOTALL)
-    if match:
-        cleaned = match.group(0)
-    return json.loads(cleaned)
+
+
+def queue_meds_for_review(meds: list, images=None) -> None:
+    """Đưa thuốc AI vừa đọc vào hàng chờ xác nhận (CHƯA lưu vào tủ thuốc).
+    images: bytes hoặc list bytes của ảnh gốc, để hiện cạnh bảng đối chiếu."""
+    st.session_state.setdefault("pending_meds", [])
+    st.session_state.setdefault("pending_images", [])
+    st.session_state.pending_meds.extend(meds)
+    if images:
+        st.session_state.pending_images.extend(images if isinstance(images, list) else [images])
+
+
+def save_review_log(owner_phone: str, review_rows: list) -> None:
+    """Ghi ẩn danh chỉnh sửa của người dùng (KHÔNG có ảnh) để đánh giá OCR. Chỉ chạy khi có đồng ý.
+    Cần bảng ocr_review_log (xem docs/migrations/ocr_review_log.sql). Lỗi không làm gián đoạn người dùng."""
+    try:
+        uid = hashlib.sha256(("safepill:" + str(owner_phone)).encode()).hexdigest()[:16]
+        supabase.table("ocr_review_log").insert([{**r, "user_hash": uid} for r in review_rows]).execute()
+    except Exception as e:
+        print(f"[save_review_log] Không ghi được log đánh giá: {e}")
+
+
+def render_pending_review() -> None:
+    pending = st.session_state.get("pending_meds", [])
+    if not pending:
+        return
+    st.warning("⚠️ AI có thể đọc sai TÊN THUỐC hoặc LIỀU LƯỢNG. Hãy đối chiếu từng dòng với ảnh gốc. "
+               "Dòng 'Chưa chắc' đã bị bỏ tick: hãy sửa cho đúng rồi tick lại để giữ.")
+    for img in st.session_state.get("pending_images", []):
+        with st.expander("🖼️ Ảnh gốc để đối chiếu", expanded=True):
+            st.image(img, use_container_width=True)
+
+    cols = ["Tên thuốc", "Liều lượng", "Thời điểm", "Lời dặn"]
+
+    def unsure(m):
+        return str(m.get("Chưa chắc chắn", "")).strip().lower() in ("có", "co", "true", "yes")
+
+    df = pd.DataFrame([{
+        "Giữ": not unsure(m), "Chưa chắc": unsure(m),
+        **{c: str(m.get(c, "") or "") for c in cols},
+    } for m in pending])
+    edited = st.data_editor(df, hide_index=True, use_container_width=True,
+                            disabled=["Chưa chắc"], key=f"pending_editor_{len(pending)}")
+    edited = edited.reset_index(drop=True)
+
+    blocking, soft = validate_pending_rows([
+        {"keep": bool(r["Giữ"]), "name": r["Tên thuốc"], "dose": r["Liều lượng"]}
+        for _, r in edited.iterrows()])
+    for b in blocking:
+        st.error(b)
+    for s in soft:
+        st.info(s)
+
+    ok = st.checkbox("Tôi đã đối chiếu TÊN THUỐC, HÀM LƯỢNG và LIỀU LƯỢNG từng dòng với đơn/ảnh gốc",
+                     key="pending_confirm")
+    st.checkbox("Cho phép ghi ẩn danh các chỉnh sửa của tôi (không lưu ảnh) để cải thiện độ chính xác",
+                key="consent_research_log")
+    c1, c2 = st.columns(2)
+    if c1.button("💾 Lưu vào tủ thuốc", type="primary", disabled=(not ok or bool(blocking))):
+        final, review_log = [], []
+        for i, row in edited.iterrows():
+            ai = pending[i]
+            review_log.append({
+                "ai_name": str(ai.get("Tên thuốc", "")), "final_name": str(row["Tên thuốc"]).strip(),
+                "ai_dose": str(ai.get("Liều lượng", "")), "final_dose": str(row["Liều lượng"]).strip(),
+                "ai_uncertain": unsure(ai), "kept": bool(row["Giữ"]),
+                "engine": str(ai.get("_engine", "")),
+            })
+            if not row["Giữ"] or not str(row["Tên thuốc"]).strip():
+                continue
+            base = {k: v for k, v in ai.items() if k != "Chưa chắc chắn" and not str(k).startswith("_")}
+            base.update({c: str(row[c]).strip() for c in cols})
+            final.append(base)
+        st.session_state.med_data.extend(final)
+        save_med_data_to_supabase()
+        if st.session_state.get("consent_research_log"):
+            save_review_log(st.session_state.user_phone, review_log)
+        st.session_state.pending_meds, st.session_state.pending_images = [], []
+        st.rerun()
+    if c2.button("🗑️ Huỷ kết quả quét"):
+        st.session_state.pending_meds, st.session_state.pending_images = [], []
+        st.rerun()
 
 
 def resolve_reminder_time(thoi_diem: str) -> str:
@@ -1190,8 +1276,6 @@ def resolve_reminder_time(thoi_diem: str) -> str:
     return "08:00"
 
 
-DEFAULT_SOURCE_NOTE = "Dược thư Quốc gia Việt Nam; Drugs.com Interaction Checker"
-DEFAULT_SOURCE_NOTE_EN = "Vietnamese National Pharmacopoeia (Dược thư Quốc gia Việt Nam); Drugs.com Interaction Checker"
 
 
 def loc_field(entry: dict, field: str) -> str:
@@ -1203,61 +1287,6 @@ def loc_field(entry: dict, field: str) -> str:
     return entry.get(field, "")
 
 
-INTERACTION_DATABASE = {
-    "Aspirin": {"conflict": ["Ibuprofen", "Warfarin", "Naproxen", "Clopidogrel"],
-                "severity": "Cao", "effect": "Tăng nguy cơ xuất huyết tiêu hóa nghiêm trọng.",
-                "severity_en": "High", "effect_en": "Increased risk of serious gastrointestinal bleeding.",
-                "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Aspirin Interactions)",
-                "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Aspirin Interactions)"},
-    "Ibuprofen": {"conflict": ["Aspirin", "Corticoid", "Enalapril", "Losartan", "Furosemide"],
-                  "severity": "Cao", "effect": "Giảm hiệu quả hạ huyết áp, tăng độc tính thận.",
-                  "severity_en": "High",
-                  "effect_en": "Reduced blood-pressure-lowering effect and increased kidney toxicity.",
-                  "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Ibuprofen Interactions)",
-                  "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Ibuprofen Interactions)"},
-    "Paracetamol": {"conflict": ["Alcohol", "Leflunomide", "Warfarin"],
-                    "severity": "Trung bình", "effect": "Tăng độc tính và nguy cơ hủy hoại tế bào gan.",
-                    "severity_en": "Moderate",
-                    "effect_en": "Increased toxicity and risk of liver cell damage.",
-                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Acetaminophen Interactions)",
-                    "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Acetaminophen Interactions)"},
-    "Metformin": {"conflict": ["Contrast dye", "Cimetidine", "Alcohol"],
-                  "severity": "Nghiêm trọng", "effect": "Tăng nguy cơ nhiễm toan lactic cấp tính.",
-                  "severity_en": "Severe",
-                  "effect_en": "Increased risk of acute lactic acidosis.",
-                  "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Metformin Interactions)",
-                  "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Metformin Interactions)"},
-    "Warfarin": {"conflict": ["Aspirin", "Paracetamol", "Ibuprofen", "Amiodarone"],
-                 "severity": "Nghiêm trọng", "effect": "Tăng nguy cơ chảy máu do tăng tác dụng chống đông.",
-                 "severity_en": "Severe",
-                 "effect_en": "Increased bleeding risk due to enhanced anticoagulant effect.",
-                 "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Warfarin Interactions)",
-                 "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Warfarin Interactions)"},
-    "Simvastatin": {"conflict": ["Amiodarone", "Clarithromycin", "Grapefruit juice"],
-                    "severity": "Cao", "effect": "Tăng nguy cơ tiêu cơ vân (rhabdomyolysis).",
-                    "severity_en": "High",
-                    "effect_en": "Increased risk of rhabdomyolysis (severe muscle breakdown).",
-                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Simvastatin Interactions)",
-                    "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Simvastatin Interactions)"},
-    "Losartan": {"conflict": ["Ibuprofen", "Potassium", "Spironolactone"],
-                 "severity": "Trung bình", "effect": "Tăng kali máu, giảm hiệu quả hạ áp.",
-                 "severity_en": "Moderate",
-                 "effect_en": "Increased blood potassium and reduced blood-pressure-lowering effect.",
-                 "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Losartan Interactions)",
-                 "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Losartan Interactions)"},
-    "Digoxin": {"conflict": ["Furosemide", "Amiodarone"],
-                "severity": "Nghiêm trọng", "effect": "Tăng nguy cơ ngộ độc digoxin, rối loạn nhịp tim.",
-                "severity_en": "Severe",
-                "effect_en": "Increased risk of digoxin toxicity and cardiac arrhythmia.",
-                "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Digoxin Interactions)",
-                "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Digoxin Interactions)"},
-    "Clopidogrel": {"conflict": ["Aspirin", "Omeprazole"],
-                    "severity": "Trung bình", "effect": "Giảm hiệu quả chống kết tập tiểu cầu.",
-                    "severity_en": "Moderate",
-                    "effect_en": "Reduced antiplatelet effectiveness.",
-                    "nguon": "Dược thư Quốc gia Việt Nam; Drugs.com (Clopidogrel Interactions)",
-                    "nguon_en": "Vietnamese National Pharmacopoeia; Drugs.com (Clopidogrel Interactions)"},
-}
 
 MISSED_DOSE_SEVERITY = {
     "Warfarin": "Nghiêm trọng", "Digoxin": "Nghiêm trọng", "Metformin": "Nghiêm trọng",
@@ -1280,169 +1309,11 @@ def localize_severity(severity_vi: str) -> str:
     return severity_vi
 
 
-def build_symmetric_lookup(db: dict) -> dict:
-    lookup = {k: dict(v) for k, v in db.items()}
-    for drug, info in db.items():
-        for other in info["conflict"]:
-            if other not in lookup:
-                lookup[other] = {"conflict": [], "severity": info["severity"], "effect": info["effect"],
-                                  "severity_en": info.get("severity_en"), "effect_en": info.get("effect_en"),
-                                  "nguon": info.get("nguon", DEFAULT_SOURCE_NOTE),
-                                  "nguon_en": info.get("nguon_en", DEFAULT_SOURCE_NOTE_EN)}
-            if drug not in lookup[other]["conflict"]:
-                lookup[other]["conflict"].append(drug)
-    return lookup
-
-
-INTERACTION_LOOKUP = build_symmetric_lookup(INTERACTION_DATABASE)
-
-
-def check_interaction(drug_a: str, drug_b: str):
-    a, b = drug_a.strip().capitalize(), drug_b.strip().capitalize()
-    info = INTERACTION_LOOKUP.get(a)
-    if info and b in info["conflict"]:
-        return {"thuoc_1": a, "thuoc_2": b, "severity": info["severity"], "effect": info["effect"],
-                "severity_en": info.get("severity_en"), "effect_en": info.get("effect_en"),
-                "nguon": info.get("nguon", DEFAULT_SOURCE_NOTE),
-                "nguon_en": info.get("nguon_en", DEFAULT_SOURCE_NOTE_EN)}
-    return None
-
-
-def scan_cabinet_for_conflicts(med_data: list) -> list:
-    names = [m.get("Tên thuốc", "").strip().capitalize() for m in med_data if m.get("Tên thuốc")]
-    conflicts = []
-    for i in range(len(names)):
-        for j in range(i + 1, len(names)):
-            result = check_interaction(names[i], names[j])
-            if result:
-                conflicts.append(result)
-    return conflicts
 
 
 # =====================================================================================
 # 3A2. TƯƠNG TÁC THUỐC – THỰC PHẨM / THẢO DƯỢC KIỂU VIỆT NAM
 # =====================================================================================
-VN_FOOD_HERB_DATABASE = {
-    "Paracetamol": [
-        {"item": "Rượu bia", "severity": "Cao",
-         "effect": "Tăng nguy cơ tổn thương gan cấp tính, đặc biệt khi dùng liều cao kéo dài.",
-         "item_en": "Alcohol", "severity_en": "High",
-         "effect_en": "Increased risk of acute liver damage, especially with high or prolonged doses.",
-         "nguon": "Drugs.com (Acetaminophen + Alcohol); Dược thư Quốc gia Việt Nam",
-         "nguon_en": "Drugs.com (Acetaminophen + Alcohol); Vietnamese National Pharmacopoeia"},
-    ],
-    "Metformin": [
-        {"item": "Rượu bia", "severity": "Nghiêm trọng",
-         "effect": "Tăng nguy cơ nhiễm toan lactic, có thể đe dọa tính mạng.",
-         "item_en": "Alcohol", "severity_en": "Severe",
-         "effect_en": "Increased risk of lactic acidosis, which can be life-threatening.",
-         "nguon": "Drugs.com (Metformin + Alcohol); Dược thư Quốc gia Việt Nam",
-         "nguon_en": "Drugs.com (Metformin + Alcohol); Vietnamese National Pharmacopoeia"},
-    ],
-    "Warfarin": [
-        {"item": "Rau càng cua / rau ngót / cải xoăn (nhiều vitamin K)", "severity": "Trung bình",
-         "effect": "Giảm tác dụng chống đông máu, tăng nguy cơ hình thành cục máu đông.",
-         "item_en": "Vitamin K–rich leafy greens (e.g., watercress, katuk, kale)",
-         "severity_en": "Moderate",
-         "effect_en": "Reduced anticoagulant effect, increasing the risk of blood clots.",
-         "nguon": "Drugs.com (Warfarin + Vitamin K foods); Dược thư Quốc gia Việt Nam",
-         "nguon_en": "Drugs.com (Warfarin + Vitamin K foods); Vietnamese National Pharmacopoeia"},
-        {"item": "Thuốc nam / thực phẩm chức năng (đương quy, nhân sâm, tỏi cô đặc...)", "severity": "Cao",
-         "effect": "Có thể tăng hoặc giảm tác dụng chống đông không kiểm soát, tăng nguy cơ chảy máu.",
-         "item_en": "Herbal remedies/supplements (e.g., dong quai, ginseng, concentrated garlic)",
-         "severity_en": "High",
-         "effect_en": "May unpredictably increase or decrease the anticoagulant effect, raising bleeding risk.",
-         "nguon": "Drugs.com (Warfarin herbal interactions); khuyến cáo Bệnh viện Bạch Mai",
-         "nguon_en": "Drugs.com (Warfarin herbal interactions); Bach Mai Hospital advisory"},
-    ],
-    "Simvastatin": [
-        {"item": "Nước ép bưởi / bưởi", "severity": "Cao",
-         "effect": "Tăng nồng độ thuốc trong máu, tăng nguy cơ tiêu cơ vân (rhabdomyolysis).",
-         "item_en": "Grapefruit juice / grapefruit", "severity_en": "High",
-         "effect_en": "Increased blood drug levels, raising the risk of rhabdomyolysis.",
-         "nguon": "Drugs.com (Simvastatin + Grapefruit); FDA Consumer Update",
-         "nguon_en": "Drugs.com (Simvastatin + Grapefruit); FDA Consumer Update"},
-    ],
-    "Aspirin": [
-        {"item": "Rượu bia", "severity": "Cao",
-         "effect": "Tăng nguy cơ xuất huyết tiêu hóa.",
-         "item_en": "Alcohol", "severity_en": "High",
-         "effect_en": "Increased risk of gastrointestinal bleeding.",
-         "nguon": "Drugs.com (Aspirin + Alcohol); Dược thư Quốc gia Việt Nam",
-         "nguon_en": "Drugs.com (Aspirin + Alcohol); Vietnamese National Pharmacopoeia"},
-        {"item": "Gừng, tỏi cô đặc (thực phẩm chức năng liều cao)", "severity": "Trung bình",
-         "effect": "Tăng tác dụng chống kết tập tiểu cầu, tăng nguy cơ chảy máu.",
-         "item_en": "Ginger, concentrated garlic (high-dose supplements)",
-         "severity_en": "Moderate",
-         "effect_en": "Increased antiplatelet effect, raising bleeding risk.",
-         "nguon": "Drugs.com (Aspirin herbal interactions)",
-         "nguon_en": "Drugs.com (Aspirin herbal interactions)"},
-    ],
-    "Digoxin": [
-        {"item": "Cam thảo (thuốc nam)", "severity": "Cao",
-         "effect": "Gây hạ kali máu, tăng nguy cơ ngộ độc digoxin.",
-         "item_en": "Licorice root (herbal remedy)", "severity_en": "High",
-         "effect_en": "Causes low blood potassium, increasing the risk of digoxin toxicity.",
-         "nguon": "Drugs.com (Digoxin + Licorice); Dược thư Quốc gia Việt Nam",
-         "nguon_en": "Drugs.com (Digoxin + Licorice); Vietnamese National Pharmacopoeia"},
-    ],
-    "Clopidogrel": [
-        {"item": "Rượu bia", "severity": "Trung bình",
-         "effect": "Tăng nguy cơ kích ứng và chảy máu đường tiêu hóa.",
-         "item_en": "Alcohol", "severity_en": "Moderate",
-         "effect_en": "Increased risk of gastrointestinal irritation and bleeding.",
-         "nguon": "Drugs.com (Clopidogrel + Alcohol)",
-         "nguon_en": "Drugs.com (Clopidogrel + Alcohol)"},
-    ],
-}
-
-
-def check_food_herb_conflicts(med_data: list) -> list:
-    results = []
-    for m in med_data:
-        name = m.get("Tên thuốc", "").strip().capitalize()
-        if name in VN_FOOD_HERB_DATABASE:
-            for warn in VN_FOOD_HERB_DATABASE[name]:
-                results.append({"thuoc": name, **warn})
-    return results
-
-
-def _strip_accents(text: str) -> str:
-    normalized = unicodedata.normalize("NFD", text)
-    without_marks = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
-    return without_marks.replace("đ", "d").replace("Đ", "D")
-
-
-def _fuzzy_food_item_match(user_input: str, item_field: str) -> bool:
-    if not user_input or not user_input.strip():
-        return False
-    ui = _strip_accents(user_input).strip().lower()
-    for part in re.split(r"[/,]", item_field):
-        p = _strip_accents(part).strip().lower()
-        p_main = re.sub(r"\(.*?\)", "", p).strip()
-        if not p_main:
-            continue
-        if ui in p_main or p_main in ui:
-            return True
-    return False
-
-
-def check_food_herb_pair(input_a: str, input_b: str) -> list:
-    results = []
-    a_clean, b_clean = input_a.strip(), input_b.strip()
-    a_key, b_key = a_clean.capitalize(), b_clean.capitalize()
-
-    if a_key in VN_FOOD_HERB_DATABASE:
-        for warn in VN_FOOD_HERB_DATABASE[a_key]:
-            if _fuzzy_food_item_match(b_clean, warn["item"]):
-                results.append({"thuoc": a_key, **warn})
-
-    if b_key in VN_FOOD_HERB_DATABASE:
-        for warn in VN_FOOD_HERB_DATABASE[b_key]:
-            if _fuzzy_food_item_match(a_clean, warn["item"]):
-                results.append({"thuoc": b_key, **warn})
-
-    return results
 
 
 # =====================================================================================
@@ -2112,25 +1983,29 @@ elif not st.session_state.logged_in:
                 if face_img:
                     with st.spinner(tr("face_login_matching")):
                         try:
-                            login_hash = average_hash(face_img.getvalue())
-                            if not login_hash:
+                            login_embedding = get_face_embedding(face_img.getvalue())
+                            if login_embedding is None:
                                 st.error(tr("face_login_bad_image"))
                             else:
                                 try:
-                                    res = supabase.table(TABLE).select("phone, full_name, pin, face_hash").execute()
+                                    res = supabase.table(TABLE).select("phone, full_name, pin, face_embedding").execute()
                                 except Exception as col_err:
                                     st.error(tr("face_login_missing_col"))
                                     res = None
                                 if res is not None:
-                                    candidates = [row for row in (res.data or []) if row.get("face_hash")]
-                                    best_match, best_distance = None, 999
+                                    candidates = [row for row in (res.data or []) if row.get("face_embedding")]
+                                    best_match, best_distance = None, 999.0
                                     for row in candidates:
-                                        dist = hamming_distance(login_hash, row["face_hash"])
+                                        try:
+                                            stored_embedding = json.loads(row["face_embedding"])
+                                        except Exception:
+                                            continue
+                                        dist = face_distance(login_embedding, stored_embedding)
                                         if dist < best_distance:
                                             best_distance, best_match = dist, row
                                     if not candidates:
                                         st.warning(tr("face_login_no_accounts"))
-                                    elif best_match and best_distance <= FACE_MATCH_THRESHOLD:
+                                    elif best_match and best_distance <= FACE_DISTANCE_THRESHOLD:
                                         full_res = supabase.table(TABLE).select("*").eq(
                                             "phone", best_match["phone"]
                                         ).execute()
@@ -2196,23 +2071,23 @@ elif not st.session_state.logged_in:
                                     "blood_type": r_blood_type,
                                     "language": r_language,
                                 }
-                                face_hash = None
+                                face_embedding = None
                                 if enable_face and reg_face_img is not None:
                                     face_bytes = reg_face_img.getvalue()
-                                    face_hash = average_hash(face_bytes)
-                                    if not face_hash:
+                                    face_embedding = get_face_embedding(face_bytes)
+                                    if face_embedding is None:
                                         st.warning(tr("register_warning_face_fail"))
                                     else:
                                         new_row["face_data"] = base64.b64encode(face_bytes).decode("utf-8")
-                                        new_row["face_hash"] = face_hash
+                                        new_row["face_embedding"] = json.dumps(face_embedding.tolist())
                                 try:
                                     resp = supabase.table(TABLE).insert(new_row).execute()
                                 except Exception as insert_err:
                                     err_text = str(insert_err)
                                     missing_cols = []
-                                    if face_hash and ("face_data" in err_text or "face_hash" in err_text
+                                    if face_embedding is not None and ("face_data" in err_text or "face_embedding" in err_text
                                                        or "column" in err_text.lower()):
-                                        missing_cols += ["face_data", "face_hash"]
+                                        missing_cols += ["face_data", "face_embedding"]
                                     if "blood_type" in err_text or "column" in err_text.lower():
                                         missing_cols.append("blood_type")
                                     if "language" in err_text or "column" in err_text.lower():
@@ -2595,42 +2470,16 @@ else:
             tr("ocr_pharmacy_label"), placeholder=tr("ocr_pharmacy_placeholder"), key="rx_common_pharmacy",
         )
         st.divider()
-        PRESCRIPTION_VISION_PROMPT = """
-Bạn là chuyên gia bóc tách dữ liệu y tế. Phân tích hình ảnh này (đơn thuốc, vỉ thuốc, hoặc trang hồ sơ
-bệnh án có kê đơn thuốc) và trả về DUY NHẤT một mảng JSON hợp lệ, không kèm markdown hay giải thích thêm,
-theo đúng cấu trúc:
-[
-    {
-        "Tên thuốc": "...",
-        "Liều lượng": "...",
-        "Thời điểm": "Sáng|Trưa|Chiều|Tối hoặc giờ cụ thể HH:MM",
-        "Loại": "...",
-        "Màu sắc": "màu chủ đạo của viên thuốc quan sát được, ví dụ: trắng, đỏ, vàng, xanh (để trống nếu không thấy rõ)",
-        "Hình dạng": "hình dạng viên thuốc quan sát được: tròn | oval | viên nén | vuông | con nhộng (để trống nếu không rõ)",
-        "Nơi khám bệnh": "tên bệnh viện/phòng khám ghi trên đơn (để trống nếu không thấy)",
-        "Bác sĩ điều trị": "tên bác sĩ kê đơn ghi trên đơn (để trống nếu không thấy)",
-        "Nơi cấp thuốc": "tên nhà thuốc/quầy thuốc cấp phát (để trống nếu không thấy)"
-        "Lời dặn": "lời dặn của bác sĩ ghi trên đơn, ví dụ: uống sau khi ăn, tránh nắng, không dùng chung với rượu (để trống nếu không thấy)"
-    }
-]
-Nếu chữ viết khó đọc, hãy suy luận hợp lý dựa trên bao bì hoặc tên thuốc phổ biến.
-Trường "Màu sắc" và "Hình dạng" giúp người già không đọc được chữ nhỏ vẫn nhận diện được thuốc qua hình ảnh minh hoạ.
-Các trường "Nơi khám bệnh", "Bác sĩ điều trị", "Nơi cấp thuốc" thường lặp lại giống nhau cho mọi loại
-thuốc trong CÙNG một đơn/toa — nếu đơn chỉ ghi thông tin này một lần ở đầu hoặc cuối trang, hãy áp dụng
-lại giá trị đó cho TẤT CẢ các thuốc được bóc tách từ đơn đó.
-Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về mảng JSON rỗng: []
-"""
+        
 
         def analyze_prescription_image(pil_img, clinic_override: str, doctor_override: str,
-                                    pharmacy_override: str):
+                                       pharmacy_override: str):
+            severe, mild = check_image_quality(pil_img)
+            if severe:
+                raise ValueError(" ".join(severe))
+            engine = "gemini"
             try:
-                response = ai_gemini.models.generate_content(
-                    model="gemini-flash-latest",
-                    contents=[pil_img, PRESCRIPTION_VISION_PROMPT],
-                )
-                parsed_meds = extract_json_array(response.text)
-                if not isinstance(parsed_meds, list):
-                    raise ValueError("AI không trả về danh sách thuốc hợp lệ.")
+                parsed_meds = read_prescription_with_gemini(ai_gemini, pil_img)
             except Exception as gemini_err:
                 try:
                     buf = io.BytesIO()
@@ -2639,10 +2488,16 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                     parsed_meds = parse_offline_ocr_text(raw_text)
                     if not parsed_meds:
                         raise gemini_err
-                except Exception as openvino_err:
+                    engine = "openvino"
+                    for pm in parsed_meds:
+                        pm["Chưa chắc chắn"] = "có"
+                except Exception:
                     raise gemini_err
 
             for pm in parsed_meds:
+                pm["_engine"] = engine
+                if mild:                      # ảnh chất lượng trung bình: buộc người dùng soát kỹ
+                    pm["Chưa chắc chắn"] = "có"
                 if clinic_override.strip():
                     pm["Nơi khám bệnh"] = clinic_override.strip()
                 if doctor_override.strip():
@@ -2651,6 +2506,7 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                     pm["Nơi cấp thuốc"] = pharmacy_override.strip()
             return parsed_meds
 
+        render_pending_review()
         has_prescription = st.radio(
             tr("ocr_method_label"),
             [tr("ocr_method_camera"), tr("ocr_method_upload"), tr("ocr_method_manual")],
@@ -2660,20 +2516,22 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
         if has_prescription == tr("ocr_method_camera"):
             img_file = st.camera_input(tr("ocr_camera_capture"), key="clinical_vision_cam")
             if img_file:
-                with st.spinner(tr("ocr_analyzing")):
-                    try:
-                        pil_img = Image.open(io.BytesIO(img_file.getvalue()))
-                        parsed_meds = analyze_prescription_image(pil_img, rx_clinic, rx_doctor, rx_pharmacy)
-                        if not parsed_meds:
-                            st.warning(tr("ocr_no_meds_found"))
-                        else:
-                            st.session_state.med_data.extend(parsed_meds)
-                            save_med_data_to_supabase()
-                            st.success(tr("ocr_added_success", n=len(parsed_meds)))
-                            st.rerun()
-                    except Exception as ex:
-                        st.error(f"{tr('ocr_analyze_fail')} {ex}")
-                        st.caption(tr("ocr_analyze_fail_hint"))
+                img_bytes = img_file.getvalue()
+                img_hash = hashlib.md5(img_bytes).hexdigest()
+                if st.session_state.get("last_camera_hash") != img_hash:
+                    st.session_state.last_camera_hash = img_hash
+                    with st.spinner(tr("ocr_analyzing")):
+                        try:
+                            pil_img = Image.open(io.BytesIO(img_bytes))
+                            parsed_meds = analyze_prescription_image(pil_img, rx_clinic, rx_doctor, rx_pharmacy)
+                            if not parsed_meds:
+                                st.warning(tr("ocr_no_meds_found"))
+                            else:
+                                queue_meds_for_review(parsed_meds, img_bytes)
+                                st.rerun()
+                        except Exception as ex:
+                            st.error(f"{tr('ocr_analyze_fail')} {ex}")
+                            st.caption(tr("ocr_analyze_fail_hint"))
             manual_expanded = False
             manual_title = tr("ocr_manual_expander")
 
@@ -2705,10 +2563,7 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                             except Exception as ex:
                                 failed_files.append((uf.name, str(ex)))
                     if all_parsed:
-                        st.session_state.med_data.extend(all_parsed)
-                        save_med_data_to_supabase()
-                        st.success(tr("ocr_added_multi_success", n=len(all_parsed), files=len(uploaded_files)))
-                    if failed_files:
+                        queue_meds_for_review(all_parsed, [uf.getvalue() for uf in uploaded_files])
                         for fname, err in failed_files:
                             st.error(f"{tr('ocr_failed_file', name=fname)} {err}")
                     if not all_parsed and not failed_files:
@@ -2769,12 +2624,17 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                         save_med_data_to_supabase()
                         st.success(tr("ocr_manual_added"))
                         st.rerun()
-                    else:
+                    unidentified = find_unidentified_drugs(st.session_state.med_data)
+                    if unidentified:
+                        st.info("ℹ️ Chưa có dữ liệu tương tác cho: " + ", ".join(unidentified) +
+                                ". Không thấy cảnh báo KHÔNG có nghĩa là an toàn, hãy hỏi dược sĩ.")
+                else:
                         st.warning(tr("ocr_manual_warn_name"))
 
     # ---------------- TAB TỦ THUỐC SỐ ----------------
     with tab_cabinet:
         st.header(tr("cabinet_header"))
+        st.caption(interaction_coverage_note(st.session_state.med_data, st.session_state.get("language", "vi")))
         if detected_conflicts:
             st.error(tr("cabinet_conflict_alert"))
             for c in detected_conflicts:
@@ -2791,7 +2651,10 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                             f"> {loc_field(w, 'effect')}  \n"
                             f"> _{tr('cabinet_source_label')}: {loc_field(w, 'nguon') or DEFAULT_SOURCE_NOTE}_")
             st.caption(tr("cabinet_food_warning_caption"))
-
+        unidentified = find_unidentified_drugs(st.session_state.med_data)
+        if unidentified:
+            st.info("ℹ️ Chưa có dữ liệu tương tác cho: " + ", ".join(unidentified) +
+                    ". Không thấy cảnh báo KHÔNG có nghĩa là an toàn, hãy hỏi dược sĩ.")
         if not med_data_valid:
             st.info(tr("cabinet_empty"))
         else:
@@ -2854,7 +2717,7 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                                 f"- {tr('matrix_recommendation')} {tr('matrix_recommendation_food')}")
 
             if not drug_result and not food_results:
-                st.success(tr("matrix_safe", a=t1.strip().capitalize(), b=t2.strip().capitalize()))
+                st.warning(tr("matrix_safe", a=t1.strip().capitalize(), b=t2.strip().capitalize()))
         st.caption(tr("matrix_footer_caption"))
 
     # ---------------- TAB HỎI ĐÁP AI ----------------
@@ -2879,7 +2742,7 @@ Nếu ảnh không chứa thông tin đơn thuốc/thuốc nào, hãy trả về
                         })
                         rag_context_parts = []
                         for dn in drug_names_in_cabinet[:5]:
-                            info = fetch_openfda_drug_info(dn)
+                            info = fetch_openfda_drug_info(normalize_drug_name(dn)[0] or dn)
                             if info:
                                 rag_context_parts.append(info)
                         rag_context = "\n\n".join(rag_context_parts) if rag_context_parts else "(Không tra được dữ liệu FDA cho các thuốc hiện có)"
@@ -2896,6 +2759,7 @@ Tương tác đã phát hiện: {detected_conflicts}.
 Dữ liệu tra cứu chính thức từ FDA (ưu tiên dùng làm căn cứ trả lời nếu liên quan đến câu hỏi):
 {rag_context}
 Câu hỏi: '{user_query}'.
+{SAFETY_PROMPT_RULES}
 QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_instruction')}
 """
                         if GEMINI_SEARCH_GROUNDING_AVAILABLE:
@@ -2931,7 +2795,10 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                         except Exception:
                             source_links = []
 
-                        trusted_links = [(t, u) for t, u in source_links if is_trusted_medical_source(u)]
+                        trusted_links = [(t, u) for t, u in source_links if is_trusted_medical_source(u, t)]
+                        _lang = st.session_state.get("language", "vi")
+                        conf_level, conf_banner = assess_answer_confidence(
+                            bool(rag_context_parts), len({u for _, u in trusted_links}), _lang)
                         if trusted_links:
                             ai_response += tr("expert_sources_title")
                             seen_uris = set()
@@ -2941,6 +2808,7 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                                 seen_uris.add(uri)
                                 ai_response += f"- [{title}]({uri})\n"
 
+                        ai_response = format_confidence_block(conf_level, conf_banner, _lang) + ai_response
                         st.markdown(ai_response)
                         st.session_state.chat_history.append({"role": "assistant", "content": ai_response})
                     except Exception as e:
@@ -3151,7 +3019,7 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
 
             st.divider()
             st.subheader(tr("acc_faceid_title"))
-            has_face = bool(st.session_state.current_profile.get("face_hash"))
+            has_face = bool(st.session_state.current_profile.get("face_embedding"))
             if has_face:
                 st.success(tr("acc_faceid_registered"))
             else:
@@ -3161,15 +3029,16 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
                 if new_face_img is not None and st.button(tr("acc_faceid_save_btn"), key="save_face_btn"):
                     try:
                         face_bytes = new_face_img.getvalue()
-                        new_face_hash = average_hash(face_bytes)
-                        if not new_face_hash:
+                        new_face_embedding = get_face_embedding(face_bytes)
+                        if new_face_embedding is None:
                             st.error(tr("acc_faceid_bad_image"))
                         else:
+                            embedding_json = json.dumps(new_face_embedding.tolist())
                             supabase.table(TABLE).update({
                                 "face_data": base64.b64encode(face_bytes).decode("utf-8"),
-                                "face_hash": new_face_hash,
+                                "face_embedding": embedding_json,
                             }).eq("phone", st.session_state.user_phone).execute()
-                            st.session_state.current_profile["face_hash"] = new_face_hash
+                            st.session_state.current_profile["face_embedding"] = embedding_json
                             st.success(tr("acc_faceid_saved"))
                             st.rerun()
                     except Exception as e:
@@ -3177,10 +3046,10 @@ QUAN TRỌNG: hãy trả lời bằng {current_lang_name()}. {tr('expert_lang_in
             if has_face:
                 if st.button(tr("acc_faceid_remove_btn"), key="remove_face_btn"):
                     try:
-                        supabase.table(TABLE).update({"face_data": None, "face_hash": None}).eq(
+                        supabase.table(TABLE).update({"face_data": None, "face_embedding": None}).eq(
                             "phone", st.session_state.user_phone
                         ).execute()
-                        st.session_state.current_profile["face_hash"] = None
+                        st.session_state.current_profile["face_embedding"] = None
                         st.success(tr("acc_faceid_removed"))
                         st.rerun()
                     except Exception as e:

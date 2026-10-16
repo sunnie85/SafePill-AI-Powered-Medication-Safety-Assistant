@@ -1,0 +1,12 @@
+
+.streamlit/secrets.toml
+.env
+venv/
+.venv/
+__pycache__/
+.DS_Store
+.~*
+evaluation/data/images/
+evaluation/data/private/
+*.pdf
+*.jpg

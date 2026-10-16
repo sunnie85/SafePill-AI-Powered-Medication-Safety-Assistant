@@ -1,0 +1,6 @@
+image_id,condition,drug_name,strength,dose
+IMG001,tot,Paracetamol,500mg,1 viên
+IMG001,tot,Losartan,50mg,1 viên
+IMG002,mo,Amlodipin,5mg,1 viên
+IMG002,mo,Metformin,850mg,1 viên
+IMG003,thieu_sang,Aspirin,81mg,1 viên

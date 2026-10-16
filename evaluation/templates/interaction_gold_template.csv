@@ -1,0 +1,4 @@
+drug_a,drug_b,expected,severity,source
+Aspirin,Warfarin,yes,Cao,https://www.drugs.com/drug-interactions/ (điền link cặp cụ thể)
+Paracetamol,Ibuprofen,no,,(điền nguồn xác nhận không có tương tác đáng kể)
+Clarithromycin,Simvastatin,yes,Cao,(điền nguồn; thuốc có thể nằm ngoài CSDL của app)
