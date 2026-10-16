@@ -1,0 +1,6 @@
+image_id,drug_name,strength,dose,uncertain
+IMG001,Paracetamol,500mg,1 viên,không
+IMG001,Losartan,100mg,1 viên,không
+IMG002,Amlodipine,5mg,1 viên,có
+IMG002,Metformin,500mg,1 viên,có
+IMG003,Aspirin,81mg,2 viên,không
